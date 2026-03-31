@@ -1,0 +1,1589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Email HTML Generator — Compatible with Gmail, Outlook, iOS &amp; More</title>
+<style>
+  /* ── Reset & base ─────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 13px;
+    color: #1C1C1E;
+    background: #fff;
+    overflow: hidden;
+  }
+
+  /* ── Colour tokens — Cobalt + Graphite system ─────────── */
+  :root {
+    /* Graphite (Neutral) ramp */
+    --graphite-50:  #F6F6F7;  /* panel background */
+    --graphite-100: #E7E7E9;  /* secondary surface, card bg */
+    --graphite-200: #BFBFC3;  /* borders, dividers */
+    --graphite-400: #88888D;  /* placeholder, disabled, icons */
+    --graphite-600: #505054;  /* secondary text */
+    --graphite-700: #38383C;  /* dark mode elevated surface */
+    --graphite-900: #1C1C1E;  /* primary text, dark mode bg */
+
+    /* Cobalt (Accent) ramp */
+    --cobalt-50:  #ECF1FF;   /* subtle accent bg, selected rows */
+    --cobalt-100: #C7D7FA;   /* focus ring fill, light accent border */
+    --cobalt-200: #8AADFA;   /* hover fill (dark mode) */
+    --cobalt-400: #4070F0;   /* dark mode primary button */
+    --cobalt-600: #2555D8;   /* primary action button */
+    --cobalt-800: #1A3580;   /* accent text on Cobalt-50 */
+    --cobalt-900: #0E1F4D;   /* dark mode selected bg */
+
+    /* Semantic — Success */
+    --success-bg:   #ECFDF5;
+    --success:      #059669;
+    --success-text: #065F46;
+
+    /* Semantic — Warning */
+    --warning-bg:   #FFF7ED;
+    --warning:      #D97706;
+    --warning-text: #9A3412;
+
+    /* Semantic — Error */
+    --error-bg:   #FEF2F2;
+    --error:      #DC2626;
+    --error-text: #991B1B;
+
+    /* Semantic — Info */
+    --info-bg:   #EFF6FF;
+    --info:      #2563EB;
+    --info-text: #1E40AF;
+
+    /* Aliases used throughout the component styles */
+    --blue:        var(--cobalt-600);  /* #2555D8 — primary action */
+    --blue-hover:  var(--cobalt-400);  /* #4070F0 — one stop lighter per spec */
+    --tab-active:  var(--graphite-100);
+    --border:      var(--graphite-200);
+    --muted:       var(--graphite-400);
+    --placeholder: var(--graphite-400);
+    --tooltip-bg:  var(--graphite-900);
+  }
+
+  /* ── Layout shell ─────────────────────────────────────── */
+  #shell {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* ── Context bar ──────────────────────────────────────── */
+  #context-bar {
+    display: flex;
+    align-items: center;
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--border);
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  #frame-name {
+    font-size: 12px;
+    color: #1C1C1E;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #mode-badge {
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+    display: none;
+  }
+  #mode-badge.visible { display: inline; }
+  #btn-preview {
+    background: var(--blue);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 5px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  #btn-preview:hover { background: var(--blue-hover); }
+  #btn-preview:disabled { opacity: 0.5; cursor: default; }
+
+  /* ── Properties panel header ─────────────────────────── */
+  #panel-header {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  #panel-header-title {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 600;
+    color: #1C1C1E;
+  }
+  #btn-open-export, #btn-settings {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #1C1C1E;
+    padding: 4px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+  #btn-open-export:hover, #btn-settings:hover { background: var(--graphite-50); }
+  #btn-open-export svg, #btn-settings svg { display: block; }
+  #btn-settings, #btn-open-export { display: none; flex-shrink: 0; }
+  #btn-settings.visible, #btn-open-export.visible { display: inline-flex; }
+
+  /* ── Settings overlay (full-screen over #shell) ────── */
+  #settings-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: #fff;
+    z-index: 50;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #settings-overlay.active { display: flex; }
+  #settings-overlay-header {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    gap: 8px;
+  }
+  #btn-back-settings {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    color: #1C1C1E;
+    padding: 2px 4px;
+    border-radius: 3px;
+    line-height: 1;
+  }
+  #btn-back-settings:hover { background: var(--graphite-50); }
+  #settings-overlay-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1C1C1E;
+  }
+  #settings-overlay-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 12px 20px;
+  }
+
+  /* ── Export overlay (full-screen over #shell) ──────── */
+  #export-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: #fff;
+    z-index: 50;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #export-overlay.active { display: flex; }
+  #export-overlay-header {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    gap: 8px;
+  }
+  #btn-back-export {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    color: #1C1C1E;
+    padding: 2px 4px;
+    border-radius: 3px;
+    line-height: 1;
+  }
+  #btn-back-export:hover { background: var(--graphite-50); }
+  #export-overlay-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1C1C1E;
+  }
+  #export-overlay-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 12px 20px;
+  }
+
+  /* ── Preview button tooltip wrapper ───────────────────── */
+  #preview-btn-wrap {
+    position: relative;
+    display: inline-flex;
+    flex-shrink: 0;
+  }
+  #preview-btn-wrap .btn-tooltip {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    background: var(--tooltip-bg);
+    color: #fff;
+    font-size: 11px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 100;
+    white-space: nowrap;
+  }
+  /* Show tooltip on wrapper hover. JS controls display:none via inline style
+     when the button is enabled — so tooltip only actually appears when disabled. */
+  #preview-btn-wrap:hover .btn-tooltip { display: block; }
+
+  /* ── Scrollable panel area ────────────────────────────── */
+  #panels {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+  }
+  .panel {
+    display: none;
+    height: 100%;
+    overflow-y: auto;
+    padding: 0 12px 20px;
+  }
+  .panel.active { display: block; }
+
+  /* ── Section headers ──────────────────────────────────── */
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #1C1C1E;
+    padding-top: 16px;
+    padding-bottom: 8px;
+  }
+
+  /* ── Two-column field rows ────────────────────────────── */
+  .field-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .field-label {
+    width: 35%;
+    font-size: 12px;
+    color: #1C1C1E;
+    padding-top: 6px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    line-height: 1.3;
+  }
+  .field-control {
+    flex: 1;
+    min-width: 0;
+  }
+  .frame-type-desc {
+    font-size: 11px;
+    color: var(--graphite-400);
+    line-height: 1.4;
+    margin: 4px 0 0 0;
+  }
+
+  /* ── Inputs ───────────────────────────────────────────── */
+  input[type="text"], textarea, select {
+    width: 100%;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 12px;
+    color: #1C1C1E;
+    outline: none;
+    font-family: inherit;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  input[type="text"]:focus, textarea:focus, select:focus {
+    border-color: var(--blue);
+  }
+  input[type="text"]::placeholder, textarea::placeholder { color: var(--placeholder); }
+  textarea {
+    resize: vertical;
+    min-height: 56px;
+    line-height: 1.4;
+  }
+  textarea.mono {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 11px;
+  }
+  select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' stroke='%2388888D' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    padding-right: 24px;
+    cursor: pointer;
+  }
+  select:disabled { color: var(--muted); background-color: var(--graphite-50); cursor: default; }
+
+  /* ── Tooltip icon ─────────────────────────────────────── */
+  .tooltip-wrap {
+    position: relative;
+    display: inline-flex;
+    cursor: default;
+  }
+  .tooltip-icon {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1px solid var(--muted);
+    color: var(--muted);
+    font-size: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    user-select: none;
+    flex-shrink: 0;
+  }
+  .tooltip-text {
+    display: none;
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 6px);
+    transform: translateX(-50%);
+    background: var(--tooltip-bg);
+    color: #fff;
+    font-size: 11px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 100;
+    max-width: 200px;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.4;
+  }
+  .tooltip-wrap:hover .tooltip-text { display: block; }
+
+  /* ── Toggle ───────────────────────────────────────────── */
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 0;
+    margin-bottom: 2px;
+  }
+  .toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .toggle {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .toggle-track {
+    position: absolute;
+    inset: 0;
+    background: var(--graphite-200);
+    border-radius: 10px;
+    transition: background 150ms;
+  }
+  .toggle-thumb {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 14px;
+    height: 14px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 150ms;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  }
+  .toggle input:checked ~ .toggle-track { background: var(--blue); }
+  .toggle input:checked ~ .toggle-thumb { transform: translateX(16px); }
+
+  /* ── Expandable sub-fields ────────────────────────────── */
+  .sub-fields {
+    display: none;
+    padding-left: 0;
+    margin-top: 8px;
+  }
+  .sub-fields.expanded { display: block; }
+
+  /* ── Mode pills ───────────────────────────────────────── */
+  .pills {
+    display: flex;
+    gap: 6px;
+    margin: 14px 0 12px;
+  }
+  .pill {
+    flex: 1;
+    border: 1.5px solid var(--border);
+    background: #fff;
+    color: var(--muted);
+    border-radius: 6px;
+    padding: 6px 0;
+    font-size: 12px;
+    font-weight: 500;
+    text-align: center;
+    cursor: pointer;
+  }
+  .pill.active {
+    background: var(--blue);
+    border-color: var(--blue);
+    color: #fff;
+  }
+  .pill:hover:not(.active) { border-color: var(--graphite-400); color: #1C1C1E; }
+
+  /* ── Frame assignment rows ────────────────────────────── */
+  .frame-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    min-height: 30px;
+  }
+  .frame-row-label {
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .frame-name-display {
+    font-size: 12px;
+    color: #1C1C1E;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+  .frame-sub { color: var(--muted); font-size: 11px; white-space: nowrap; }
+  .btn-select-frame {
+    border: 1.5px solid var(--border);
+    background: #fff;
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 12px;
+    color: #1C1C1E;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-select-frame:hover:not(:disabled) { border-color: var(--blue); color: var(--blue); }
+  .btn-select-frame:disabled { opacity: 0.45; cursor: default; }
+  .btn-clear-frame {
+    border: none;
+    background: none;
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1;
+    padding: 2px 5px;
+    border-radius: 4px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .btn-clear-frame:hover { background: var(--graphite-50); color: #1C1C1E; }
+
+  /* ── Preview panel ────────────────────────────────────── */
+  #preview-panel {
+    display: none;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+  #preview-panel.active { display: flex; }
+
+  #preview-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  #btn-back {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    color: #1C1C1E;
+    padding: 2px 6px;
+    border-radius: 3px;
+    line-height: 1;
+  }
+  #btn-back:hover { background: var(--graphite-50); }
+
+  .preview-view-btns { display: flex; gap: 4px; margin-left: 4px; }
+  .view-btn {
+    border: 1.5px solid var(--border);
+    background: #fff;
+    color: var(--muted);
+    border-radius: 5px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .view-btn.active {
+    background: var(--blue);
+    border-color: var(--blue);
+    color: #fff;
+  }
+  .view-btn:hover:not(.active) { border-color: var(--graphite-400); color: #1C1C1E; }
+
+  #file-size {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+    transition: color 0.2s;
+  }
+  #file-size.size-warn {
+    color: var(--warning);  /* Cobalt+Graphite — Semantic Warning */
+  }
+  #file-size.size-over {
+    color: var(--error);    /* Cobalt+Graphite — Semantic Error */
+    font-weight: 600;
+  }
+  #size-banner {
+    display: none;
+    font-size: 11px;
+    color: var(--warning-text);
+    background: var(--warning-bg);
+    border: 1px solid var(--warning);
+    border-radius: 5px;
+    padding: 7px 10px;
+    margin-bottom: 8px;
+    line-height: 1.4;
+  }
+
+  #preview-viewport {
+    flex: 1;
+    /* Scrollbar lives HERE, outside the iframe's containing block,
+       so it never reduces the iframe's viewport width. */
+    overflow-y: auto;
+    overflow-x: auto;
+    background: var(--graphite-100);
+    /* Centre the wrap horizontally inside the grey background */
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+  }
+  #preview-iframe-wrap {
+    /* NO overflow / scrollbar here — the wrap must be exactly the
+       width we set, with nothing eating into it. */
+    overflow: visible;
+    flex-shrink: 0;
+    transition: width 200ms ease;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  }
+  #preview-iframe {
+    border: none;
+    display: block;
+    width: 100%;
+    /* Height is set dynamically via JS after each load to match content. */
+    height: 100px;
+  }
+
+  #export-panel {
+    border-top: 1px solid var(--border);
+    padding: 10px 12px 12px;
+    flex-shrink: 0;
+  }
+
+  .btn-full {
+    display: block;
+    width: 100%;
+    padding: 8px 0;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 6px;
+    cursor: pointer;
+    text-align: center;
+    margin-bottom: 8px;
+  }
+  .btn-full:last-child { margin-bottom: 0; }
+  .btn-secondary {
+    background: #fff;
+    border: 1.5px solid var(--border);
+    color: #1C1C1E;
+  }
+  .btn-secondary:hover { border-color: var(--graphite-400); }
+  .btn-primary {
+    background: var(--blue);
+    border: 1.5px solid var(--blue);
+    color: #fff;
+  }
+  .btn-primary:hover { background: var(--blue-hover); border-color: var(--blue-hover); }
+
+  /* ── Status / error messages ──────────────────────────── */
+  #status-msg {
+    font-size: 11px;
+    min-height: 16px;
+    margin-bottom: 8px;
+    color: var(--error);  /* Cobalt+Graphite — Semantic Error */
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══ MAIN SHELL ═══════════════════════════════════════════ -->
+<div id="shell">
+
+  <!-- Context bar -->
+  <div id="context-bar">
+    <span id="frame-name">No frame selected</span>
+    <span id="mode-badge">Breakpoints mode</span>
+    <!-- Export Mode icon: always visible -->
+    <button id="btn-open-export" title="Export Mode">
+      <!-- Material 3 "smartphone" / mobile icon -->
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
+        <line x1="12" y1="18" x2="12.01" y2="18"/>
+      </svg>
+    </button>
+    <!-- Settings icon: visible only when a Template frame is selected -->
+    <button id="btn-settings" title="Email settings">
+      <!-- Material 3 "settings" gear icon -->
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
+    <div id="preview-btn-wrap">
+      <button id="btn-preview" disabled>Preview</button>
+      <span class="btn-tooltip" id="preview-tooltip" style="display:none;">Select a frame with type Template</span>
+    </div>
+  </div>
+
+  <!-- Properties panel header (title only) -->
+  <div id="panel-header">
+    <span id="panel-header-title">Properties</span>
+  </div>
+
+  <!-- Settings overlay: Email-level metadata for Template frames -->
+  <div id="settings-overlay">
+    <div id="settings-overlay-header">
+      <button id="btn-back-settings" title="Back to Properties">&#8592;</button>
+      <span id="settings-overlay-title">Email Settings</span>
+    </div>
+    <div id="settings-overlay-body">
+
+      <div class="field-row">
+        <label class="field-label" for="inp-subject">Subject</label>
+        <div class="field-control">
+          <input type="text" id="inp-subject" placeholder="Email subject line" data-key="subject">
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label class="field-label" for="ta-preheader">Preheader</label>
+        <div class="field-control">
+          <textarea id="ta-preheader" placeholder="Preview text shown in inbox" data-key="preheader" rows="2"></textarea>
+        </div>
+      </div>
+
+      <!-- UTM parameters -->
+      <div class="section-header" style="padding-top:4px;">
+        <span>&#128279;</span>
+        <span>UTM Parameters</span>
+      </div>
+
+      <div class="field-row">
+        <label class="field-label" for="inp-utm-source">Source</label>
+        <div class="field-control">
+          <input type="text" id="inp-utm-source" placeholder="e.g. newsletter" data-key="utmSource">
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label class="field-label" for="inp-utm-medium">Medium</label>
+        <div class="field-control">
+          <input type="text" id="inp-utm-medium" placeholder="e.g. email" data-key="utmMedium">
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label class="field-label" for="inp-utm-campaign">Campaign</label>
+        <div class="field-control">
+          <input type="text" id="inp-utm-campaign" placeholder="e.g. spring_sale" data-key="utmCampaign">
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label class="field-label" for="inp-utm-content">Content</label>
+        <div class="field-control">
+          <input type="text" id="inp-utm-content" placeholder="e.g. hero_cta" data-key="utmContent">
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label class="field-label" for="inp-utm-term">Term</label>
+        <div class="field-control">
+          <input type="text" id="inp-utm-term" placeholder="e.g. email+marketing" data-key="utmTerm">
+        </div>
+      </div>
+
+      <!-- Custom head code -->
+      <div class="section-header" style="padding-top:4px;">
+        <span>&#128196;</span>
+        <span>Custom &lt;head&gt;</span>
+      </div>
+
+      <div class="field-row">
+        <div class="field-control" style="width:100%;">
+          <textarea id="ta-head" class="mono" placeholder="HTML injected inside &lt;head&gt;" data-key="head" rows="5"></textarea>
+        </div>
+      </div>
+
+    </div><!-- /settings-overlay-body -->
+  </div><!-- /settings-overlay -->
+
+  <!-- Export overlay (slides over the shell) -->
+  <div id="export-overlay">
+    <div id="export-overlay-header">
+      <button id="btn-back-export" title="Back to Properties">&#8592;</button>
+      <span id="export-overlay-title">Export Mode</span>
+    </div>
+    <div id="export-overlay-body">
+
+      <!-- Mode pills -->
+      <div class="pills">
+        <button class="pill active" id="pill-responsive">Responsive</button>
+        <button class="pill" id="pill-breakpoints">Breakpoints</button>
+      </div>
+
+      <!-- Responsive: single locked frame row -->
+      <div id="responsive-section">
+        <div class="frame-row">
+          <span class="frame-row-label">Desktop &amp; Mobile</span>
+          <span class="frame-name-display" id="resp-frame-name" style="display:none;"></span>
+          <button class="btn-clear-frame" id="btn-clear-resp" style="display:none;" title="Remove frame">&#x00D7;</button>
+          <button class="btn-select-frame" id="btn-set-resp">Set frame</button>
+        </div>
+      </div>
+
+      <!-- Breakpoints: two frame rows (each has Set button + ✕ clear) -->
+      <div id="breakpoints-section" style="display:none;">
+        <!-- Desktop row -->
+        <div class="frame-row">
+          <span class="frame-row-label">Desktop</span>
+          <span class="frame-name-display" id="bp-desktop-name" style="display:none;"></span>
+          <button class="btn-clear-frame" id="btn-clear-desktop" style="display:none;" title="Remove desktop frame">&#x00D7;</button>
+          <button class="btn-select-frame" id="btn-set-desktop">Set desktop frame</button>
+        </div>
+        <!-- Mobile row -->
+        <div class="frame-row">
+          <span class="frame-row-label">Mobile</span>
+          <span class="frame-name-display" id="bp-mobile-name" style="display:none;"></span>
+          <button class="btn-clear-frame" id="btn-clear-mobile" style="display:none;" title="Remove mobile frame">&#x00D7;</button>
+          <button class="btn-select-frame" id="btn-set-mobile">Set mobile frame</button>
+        </div>
+        <!-- Gmail iOS notice -->
+        <p style="margin-top:10px;font-size:11px;color:var(--muted);line-height:1.5;">
+          &#9432;&nbsp;Gmail on iOS ignores <code style="font-size:10px;">@media</code> queries and always shows the desktop version. Use Responsive mode if Gmail iOS support is required.
+        </p>
+      </div>
+
+    </div><!-- /export-overlay-body -->
+  </div><!-- /export-overlay -->
+
+  <!-- Panels (Properties only, always visible) -->
+  <div id="panels">
+
+    <!-- ── Properties panel ──────────────────────────── -->
+    <div class="panel active" id="panel-properties">
+
+      <!-- Placeholder when nothing is selected -->
+      <div id="no-selection" style="padding-top:28px; color:var(--muted); font-size:12px; text-align:center;">
+        Select a frame in Figma to edit its properties.
+      </div>
+
+      <!-- ─ Section: Frame (General) ─────────────────── -->
+      <div id="section-frame" style="display:none;padding-top:12px;">
+
+        <div class="field-row">
+          <label class="field-label" for="sel-frame-type">Frame type</label>
+          <div class="field-control">
+            <select id="sel-frame-type">
+              <option value="">Frame</option>
+              <option value="button">Button</option>
+              <option value="template">Template</option>
+            </select>
+            <p class="frame-type-desc" id="desc-frame-type">A section inside the email. Used to create rows, columns, and content blocks like headers or footers.</p>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label class="field-label" for="inp-href">Link URL</label>
+          <div class="field-control">
+            <input type="text" id="inp-href" placeholder="https://figma.com" data-key="href">
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label class="field-label" for="sel-visibility">Visibility</label>
+          <div class="field-control">
+            <select id="sel-visibility" data-key="visibility">
+              <option value="">Mobile &amp; Desktop</option>
+              <option value="mobile">Mobile only</option>
+              <option value="desktop">Desktop only</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label class="field-label" for="inp-class">Class</label>
+          <div class="field-control">
+            <input type="text" id="inp-class" placeholder="Some class" data-key="class">
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label class="field-label" for="inp-id">ID</label>
+          <div class="field-control">
+            <input type="text" id="inp-id" placeholder="Some ID" data-key="id">
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label class="field-label" for="inp-comment">Comment</label>
+          <div class="field-control">
+            <input type="text" id="inp-comment" placeholder="Comment" data-key="comment">
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label class="field-label" for="inp-rawcode">
+            Code
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">The following code will be exported in the email instead of this frame</span>
+            </span>
+          </label>
+          <div class="field-control">
+            <input type="text" id="inp-rawcode" placeholder="Code" data-key="rawCode">
+          </div>
+        </div>
+
+        <!-- Export as Image toggle -->
+        <div class="toggle-row">
+          <div class="toggle-label">
+            <span>&#128444;</span>
+            <span>Export as Image</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="tog-export-img">
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </label>
+        </div>
+        <div class="sub-fields" id="export-img-fields">
+          <div class="field-row">
+            <label class="field-label" for="inp-src">Source URL</label>
+            <div class="field-control">
+              <input type="text" id="inp-src" placeholder="https://" data-key="src">
+            </div>
+          </div>
+          <div class="field-row">
+            <label class="field-label" for="inp-alt">Alt text</label>
+            <div class="field-control">
+              <input type="text" id="inp-alt" placeholder="Some alt text" data-key="alt">
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /section-frame -->
+
+      <!-- ─ Section: Button ───────────────────────────── -->
+      <div id="section-button" style="display:none;padding-top:12px;">
+
+        <div class="field-row">
+          <label class="field-label" for="sel-btn-frame-type">Frame type</label>
+          <div class="field-control">
+            <select id="sel-btn-frame-type">
+              <option value="">Frame</option>
+              <option value="button">Button</option>
+              <option value="template">Template</option>
+            </select>
+            <p class="frame-type-desc" id="desc-btn-frame-type">A CTA block that generates email-compatible HTML for all major clients.</p>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label class="field-label" for="inp-btn-link">Button link</label>
+          <div class="field-control">
+            <input type="text" id="inp-btn-link" placeholder="#" data-key="href">
+          </div>
+        </div>
+
+        <div class="toggle-row">
+          <div class="toggle-label">
+            <span>Full width on mobile</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="tog-full-width">
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </label>
+        </div>
+
+      </div><!-- /section-button -->
+
+      <!-- ─ Section: Template ─────────────────────────── -->
+      <div id="section-template" style="display:none;padding-top:12px;">
+
+        <div class="field-row">
+          <label class="field-label" for="sel-tmpl-frame-type">Frame type</label>
+          <div class="field-control">
+            <select id="sel-tmpl-frame-type">
+              <option value="">Frame</option>
+              <option value="button">Button</option>
+              <option value="template">Template</option>
+            </select>
+            <p class="frame-type-desc" id="desc-tmpl-frame-type">The outermost email container. Sets the global width, background color, and wraps all content inside.</p>
+          </div>
+        </div>
+
+      </div><!-- /section-template -->
+
+    </div><!-- /panel-properties -->
+
+  </div><!-- /panels -->
+</div><!-- /shell -->
+
+
+<!-- ═══ PREVIEW PANEL ════════════════════════════════════════ -->
+<div id="preview-panel">
+
+  <!-- Toolbar -->
+  <div id="preview-toolbar">
+    <button id="btn-back" title="Back to plugin">&#8592;</button>
+    <div class="preview-view-btns">
+      <button class="view-btn active" id="btn-view-web">Web</button>
+      <button class="view-btn" id="btn-view-mobile">Mobile</button>
+    </div>
+    <span id="file-size"></span>
+  </div>
+
+  <!-- Iframe viewport -->
+  <div id="preview-viewport">
+    <div id="preview-iframe-wrap">
+      <iframe id="preview-iframe" sandbox="allow-same-origin" title="Email Preview"></iframe>
+    </div>
+  </div>
+
+  <!-- Export panel -->
+  <div id="export-panel">
+    <div class="field-row" style="margin-bottom:10px;">
+      <label class="field-label" for="inp-email-title">Email Title</label>
+      <div class="field-control">
+        <input type="text" id="inp-email-title" placeholder="Email title">
+      </div>
+    </div>
+    <div id="size-banner"></div>
+    <div id="status-msg"></div>
+    <button class="btn-full btn-secondary" id="btn-copy-html">Copy HTML &nbsp; &lt;&gt;</button>
+    <button class="btn-full btn-primary"   id="btn-export-html">Export as HTML &nbsp; &#8595;</button>
+  </div>
+
+</div><!-- /preview-panel -->
+
+
+<script>
+// ── State ───────────────────────────────────────────────────
+var _currentNode   = null;   // { id, name, type, cfg }
+var _currentMode   = 'responsive'; // 'responsive' | 'breakpoints'
+var _bpDesktopId   = null;   // locked desktop frame ID (breakpoints mode)
+var _bpMobileId    = null;   // locked mobile frame ID (breakpoints mode)
+var _respFrameId   = null;   // locked frame ID (responsive mode)
+var _generatedHtml = '';
+var _emailWidth    = 600;
+
+// Initialise preview button tooltip (button starts disabled)
+updatePreviewBtn(false);
+
+// ── Settings overlay open / close ───────────────────────────
+document.getElementById('btn-settings').addEventListener('click', function() {
+  document.getElementById('settings-overlay').classList.add('active');
+});
+document.getElementById('btn-back-settings').addEventListener('click', function() {
+  document.getElementById('settings-overlay').classList.remove('active');
+});
+
+// ── Export overlay open / close ─────────────────────────────
+document.getElementById('btn-open-export').addEventListener('click', function() {
+  document.getElementById('export-overlay').classList.add('active');
+});
+document.getElementById('btn-back-export').addEventListener('click', function() {
+  document.getElementById('export-overlay').classList.remove('active');
+});
+
+// ── Mode pills ──────────────────────────────────────────────
+document.getElementById('pill-responsive').addEventListener('click', function() { setMode('responsive'); });
+document.getElementById('pill-breakpoints').addEventListener('click', function() { setMode('breakpoints'); });
+
+function setMode(mode) {
+  _currentMode = mode;
+  document.getElementById('pill-responsive').classList.toggle('active', mode === 'responsive');
+  document.getElementById('pill-breakpoints').classList.toggle('active', mode === 'breakpoints');
+  document.getElementById('responsive-section').style.display  = mode === 'responsive'  ? '' : 'none';
+  document.getElementById('breakpoints-section').style.display = mode === 'breakpoints' ? '' : 'none';
+  var badge = document.getElementById('mode-badge');
+  if (mode === 'breakpoints') { badge.classList.add('visible'); }
+  else { badge.classList.remove('visible'); }
+}
+
+// ── Responsive frame Set / Clear button ─────────────────────
+document.getElementById('btn-set-resp').addEventListener('click', function() {
+  if (!_currentNode) return;
+  parent.postMessage({ pluginMessage: { type: 'set-resp-frame' } }, '*');
+});
+document.getElementById('btn-clear-resp').addEventListener('click', function() {
+  _respFrameId = null;
+  renderRespRow(null);
+  parent.postMessage({ pluginMessage: { type: 'clear-resp-frame' } }, '*');
+});
+
+// Render the responsive row: name+✕ when assigned, Set button when empty.
+function renderRespRow(name) {
+  var nameEl  = document.getElementById('resp-frame-name');
+  var clearEl = document.getElementById('btn-clear-resp');
+  var setEl   = document.getElementById('btn-set-resp');
+  if (name) {
+    nameEl.textContent    = name;
+    nameEl.style.display  = 'inline';
+    clearEl.style.display = 'inline-flex';
+    setEl.style.display   = 'none';
+  } else {
+    nameEl.style.display  = 'none';
+    clearEl.style.display = 'none';
+    setEl.style.display   = '';
+    setEl.disabled = !_currentNode;
+  }
+}
+
+// ── Breakpoints frame Set / Clear buttons ───────────────────
+document.getElementById('btn-set-desktop').addEventListener('click', function() {
+  if (!_currentNode) return;
+  parent.postMessage({ pluginMessage: { type: 'set-breakpoint-frame', role: 'desktop' } }, '*');
+});
+document.getElementById('btn-set-mobile').addEventListener('click', function() {
+  if (!_currentNode) return;
+  parent.postMessage({ pluginMessage: { type: 'set-breakpoint-frame', role: 'mobile' } }, '*');
+});
+document.getElementById('btn-clear-desktop').addEventListener('click', function() {
+  _bpDesktopId = null;
+  renderBpRow('desktop', null);
+  parent.postMessage({ pluginMessage: { type: 'clear-breakpoint-frame', role: 'desktop' } }, '*');
+});
+document.getElementById('btn-clear-mobile').addEventListener('click', function() {
+  _bpMobileId = null;
+  renderBpRow('mobile', null);
+  parent.postMessage({ pluginMessage: { type: 'clear-breakpoint-frame', role: 'mobile' } }, '*');
+});
+
+// Render a breakpoints row: show name+✕ when assigned, Set button when empty.
+function renderBpRow(role, name) {
+  var nameEl  = document.getElementById('bp-' + role + '-name');
+  var clearEl = document.getElementById('btn-clear-' + role);
+  var setEl   = document.getElementById('btn-set-' + role);
+  if (name) {
+    nameEl.textContent    = name;
+    nameEl.style.display  = 'inline';
+    clearEl.style.display = 'inline-flex';
+    setEl.style.display   = 'none';
+  } else {
+    nameEl.style.display  = 'none';
+    clearEl.style.display = 'none';
+    setEl.style.display   = '';
+    // Disable Set button if no frame is currently selected in Figma
+    setEl.disabled = !_currentNode;
+  }
+}
+
+// ── Frame type section switching ────────────────────────────
+function showSection(frameType) {
+  var isFrame    = (!frameType || frameType === '' || frameType === 'image' || frameType === 'divider' || frameType === 'section');
+  var isButton   = (frameType === 'button');
+  var isTemplate = (frameType === 'template');
+  document.getElementById('section-frame').style.display    = isFrame    ? 'block' : 'none';
+  document.getElementById('section-button').style.display   = isButton   ? 'block' : 'none';
+  document.getElementById('section-template').style.display = isTemplate ? 'block' : 'none';
+  document.getElementById('no-selection').style.display     = 'none';
+  // Keep all three dropdowns in sync
+  document.getElementById('sel-frame-type').value      = frameType || '';
+  document.getElementById('sel-btn-frame-type').value  = frameType || '';
+  document.getElementById('sel-tmpl-frame-type').value = frameType || '';
+  updateFrameTypeDescs(frameType || '');
+}
+
+function showNoSelection() {
+  document.getElementById('no-selection').style.display     = 'block';
+  document.getElementById('section-frame').style.display    = 'none';
+  document.getElementById('section-button').style.display   = 'none';
+  document.getElementById('section-template').style.display = 'none';
+}
+
+// ── Frame type descriptions ───────────────────────────────────
+var FRAME_TYPE_DESCS = {
+  '':         'A section inside the email. Used to create rows, columns, and content blocks like headers or footers.',
+  'button':   'A CTA block that generates email-compatible HTML for all major clients.',
+  'template': 'The outermost email container. Sets the global width, background color, and wraps all content inside.'
+};
+function updateFrameTypeDescs(val) {
+  var desc = FRAME_TYPE_DESCS.hasOwnProperty(val) ? FRAME_TYPE_DESCS[val] : FRAME_TYPE_DESCS[''];
+  ['desc-frame-type', 'desc-btn-frame-type', 'desc-tmpl-frame-type'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = desc;
+  });
+}
+
+// ── Frame type dropdown changes ──────────────────────────────
+['sel-frame-type', 'sel-btn-frame-type', 'sel-tmpl-frame-type'].forEach(function(selId) {
+  document.getElementById(selId).addEventListener('change', function() {
+    var val = this.value;
+    parent.postMessage({ pluginMessage: { type: 'update-prop', key: 'frameType', value: val } }, '*');
+    showSection(val);
+    updateFrameTypeDescs(val);
+  });
+});
+
+// ── Generic data-key wiring ──────────────────────────────────
+function wireEl(el) {
+  var eventName = (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') ? 'change' : 'change';
+  el.addEventListener(eventName, function() {
+    parent.postMessage({ pluginMessage: { type: 'update-prop', key: el.dataset.key, value: el.value } }, '*');
+  });
+}
+document.querySelectorAll('[data-key]').forEach(wireEl);
+
+// ── Export as Image toggle ───────────────────────────────────
+var togImg    = document.getElementById('tog-export-img');
+var imgFields = document.getElementById('export-img-fields');
+
+togImg.addEventListener('change', function() {
+  var on = togImg.checked;
+  imgFields.classList.toggle('expanded', on);
+  parent.postMessage({ pluginMessage: { type: 'update-prop', key: 'exportImg', value: on } }, '*');
+});
+
+// ── Full width on mobile toggle ──────────────────────────────
+document.getElementById('tog-full-width').addEventListener('change', function() {
+  parent.postMessage({ pluginMessage: { type: 'update-prop', key: 'fullWidthMobile', value: this.checked } }, '*');
+});
+
+// ── Populate form from cfg ───────────────────────────────────
+function populateForm(cfg) {
+  if (!cfg) return;
+  setInputVal('inp-href',         cfg.href        || '');
+  setInputVal('inp-class',        cfg.className   || '');
+  setInputVal('inp-id',           cfg.id          || '');
+  setInputVal('inp-comment',      cfg.comment     || '');
+  setInputVal('inp-rawcode',      cfg.rawCode     || '');
+  setInputVal('inp-src',          cfg.src         || '');
+  setInputVal('inp-alt',          cfg.alt         || '');
+  setInputVal('inp-btn-link',     cfg.href        || '');
+  setInputVal('inp-subject',      cfg.subject     || '');
+  setInputVal('ta-preheader',     cfg.preheader   || '');
+  setInputVal('inp-utm-source',   cfg.utmSource   || '');
+  setInputVal('inp-utm-medium',   cfg.utmMedium   || '');
+  setInputVal('inp-utm-campaign', cfg.utmCampaign || '');
+  setInputVal('inp-utm-content',  cfg.utmContent  || '');
+  setInputVal('inp-utm-term',     cfg.utmTerm     || '');
+  setInputVal('ta-head',          cfg.head        || '');
+  document.getElementById('sel-visibility').value = cfg.visibility || '';
+  var imgOn = !!(cfg.exportImg);
+  togImg.checked = imgOn;
+  imgFields.classList.toggle('expanded', imgOn);
+  document.getElementById('tog-full-width').checked = !!(cfg.fullWidthMobile);
+}
+
+function setInputVal(id, val) {
+  var el = document.getElementById(id);
+  if (el) el.value = val;
+}
+
+// ── Messages from code.js ────────────────────────────────────
+window.onmessage = function(event) {
+  var msg = event.data && event.data.pluginMessage;
+  if (!msg) return;
+
+  if (msg.type === 'selection') {
+    if (!msg.node) {
+      _currentNode = null;
+      document.getElementById('frame-name').textContent = 'No frame selected';
+      updatePreviewBtn(false);
+      // Update Set buttons disabled state
+      var setD = document.getElementById('btn-set-desktop');
+      var setM = document.getElementById('btn-set-mobile');
+      var setR = document.getElementById('btn-set-resp');
+      if (setD && !_bpDesktopId) setD.disabled = true;
+      if (setM && !_bpMobileId)  setM.disabled = true;
+      if (setR && !_respFrameId)  setR.disabled = true;
+      showNoSelection();
+      return;
+    }
+    _currentNode = msg.node;
+    var name = msg.node.name || 'Unnamed';
+    document.getElementById('frame-name').textContent = name;
+    var cfg = msg.node.cfg || {};
+    // Preview enabled only when selected frame is a Template
+    updatePreviewBtn(cfg.frameType === 'template');
+    // Auto-lock responsive frame on FIRST selection only
+    if (_currentMode === 'responsive' && !_respFrameId) {
+      parent.postMessage({ pluginMessage: { type: 'set-resp-frame' } }, '*');
+    }
+    // Auto-populate desktop breakpoint on the FIRST selection only
+    if (_currentMode === 'breakpoints' && !_bpDesktopId) {
+      parent.postMessage({ pluginMessage: { type: 'set-breakpoint-frame', role: 'desktop' } }, '*');
+    }
+    // Re-enable Set buttons now that we have a selection
+    var setDBtn = document.getElementById('btn-set-desktop');
+    var setMBtn = document.getElementById('btn-set-mobile');
+    var setRBtn = document.getElementById('btn-set-resp');
+    if (setDBtn && !_bpDesktopId) setDBtn.disabled = false;
+    if (setMBtn && !_bpMobileId)  setMBtn.disabled = false;
+    if (setRBtn && !_respFrameId)  setRBtn.disabled = false;
+    // Populate Properties panel
+    showSection(cfg.frameType || '');
+    populateForm(cfg);
+    return;
+  }
+
+  if (msg.type === 'name-updated') {
+    if (_currentNode) {
+      _currentNode.name = msg.name;
+      document.getElementById('frame-name').textContent = msg.name;
+    }
+    return;
+  }
+
+  if (msg.type === 'resp-frame-set') {
+    _respFrameId = msg.id;
+    renderRespRow(msg.name);
+    return;
+  }
+
+  if (msg.type === 'resp-frame-cleared') {
+    _respFrameId = null;
+    renderRespRow(null);
+    return;
+  }
+
+  if (msg.type === 'breakpoint-frame-set') {
+    if (msg.role === 'desktop') {
+      _bpDesktopId = msg.id;
+      renderBpRow('desktop', msg.name);
+    } else if (msg.role === 'mobile') {
+      _bpMobileId = msg.id;
+      renderBpRow('mobile', msg.name);
+    }
+    return;
+  }
+
+  if (msg.type === 'html-result') {
+    _generatedHtml = msg.html;
+    _emailWidth    = msg.emailWidth || 600;
+    openPreview();
+    return;
+  }
+
+  if (msg.type === 'error') {
+    showStatus(msg.message || 'An error occurred.', true);
+    return;
+  }
+};
+
+// ── Preview button state helper ──────────────────────────────
+function updatePreviewBtn(enabled) {
+  var btn        = document.getElementById('btn-preview');
+  var tooltip    = document.getElementById('preview-tooltip');
+  var settings   = document.getElementById('btn-settings');
+  var exportBtn  = document.getElementById('btn-open-export');
+  btn.disabled = !enabled;
+  // Tooltip only appears on hover when disabled
+  if (tooltip)   tooltip.style.display = enabled ? 'none' : '';
+  // Both icons only visible for Template frames
+  if (settings)  settings.classList.toggle('visible', enabled);
+  if (exportBtn) exportBtn.classList.toggle('visible', enabled);
+  // Close overlays if we navigate away from a Template frame
+  if (!enabled) {
+    document.getElementById('settings-overlay').classList.remove('active');
+    document.getElementById('export-overlay').classList.remove('active');
+  }
+}
+
+// ── Preview button click ─────────────────────────────────────
+document.getElementById('btn-preview').addEventListener('click', function() {
+  showStatus('', false);
+  if (_currentMode === 'responsive') {
+    // Use locked responsive frame if set, otherwise fall back to current selection
+    if (!_respFrameId && !_currentNode) return;
+    parent.postMessage({ pluginMessage: {
+      type:        'generate',
+      respFrameId: _respFrameId || null,
+      emailTitle:  _currentNode ? _currentNode.name : ''
+    }}, '*');
+  } else {
+    if (!_bpDesktopId) {
+      showStatus('Please set a desktop frame first.', true);
+      return;
+    }
+    if (!_bpMobileId) {
+      showStatus('Please set a mobile frame first.', true);
+      return;
+    }
+    parent.postMessage({ pluginMessage: {
+      type:       'generate-breakpoint',
+      emailTitle: _currentNode ? _currentNode.name : ''
+    }}, '*');
+  }
+});
+
+// ── Preview helpers ──────────────────────────────────────────
+// Build a preview-safe version of the email HTML by injecting an
+// explicit visibility override <style> tag.  We cannot rely on @media
+// queries inside a nested srcdoc iframe (Figma's plugin webview does
+// not reliably resize the inner iframe's viewport when the wrapper
+// element changes width), so we force the correct visibility state
+// directly with a high-specificity style block appended to </body>.
+function buildPreviewHtml(mode) {
+  var overrideCss;
+  if (mode === 'mobile') {
+    overrideCss =
+      '<style id="preview-override">' +
+      '.for-mobile{display:block!important;max-height:none!important;overflow:visible!important;}' +
+      '.for-desktop{display:none!important;max-height:0!important;overflow:hidden!important;}' +
+      '</style>';
+  } else {
+    // web / desktop view
+    overrideCss =
+      '<style id="preview-override">' +
+      '.for-mobile{display:none!important;max-height:0!important;overflow:hidden!important;}' +
+      '.for-desktop{display:block!important;max-height:none!important;overflow:visible!important;}' +
+      '</style>';
+  }
+  var html = _generatedHtml;
+  // Inject override just before </body> so it wins over all earlier rules
+  if (html.indexOf('</body>') !== -1) {
+    return html.replace('</body>', overrideCss + '</body>');
+  }
+  return html + overrideCss;
+}
+
+// ── UI resize helper ─────────────────────────────────────────
+// Desktop preview: widen the plugin window so the email sits comfortably
+// with ~40 px of grey gutters on each side. Mobile preview and the main
+// panel stay at the default 480 px width.
+var _UI_DEFAULT_WIDTH  = 480;
+var _UI_DEFAULT_HEIGHT = 700;
+var _UI_PADDING        = 80; // total horizontal padding (40 px each side)
+
+function resizeUI(width, height) {
+  parent.postMessage({ pluginMessage: {
+    type:   'resize-ui',
+    width:  width,
+    height: height || _UI_DEFAULT_HEIGHT
+  }}, '*');
+}
+
+// ── Open preview screen ──────────────────────────────────────
+function openPreview() {
+  if (!_generatedHtml) return;
+  document.getElementById('shell').style.display = 'none';
+  document.getElementById('preview-panel').classList.add('active');
+  // Auto-fill title
+  if (_currentNode) {
+    document.getElementById('inp-email-title').value = _currentNode.name || '';
+  }
+  // _emailWidth is set by the html-result handler from the actual generated email width
+  // Compute and display the minified output size (what the user will actually copy/export).
+  var _minified = minifyHtml(_generatedHtml);
+  var byteLen = (typeof TextEncoder !== 'undefined'
+    ? new TextEncoder().encode(_minified).length
+    : _minified.length);
+  var kbStr = (byteLen / 1024).toFixed(1) + ' KB';
+  var sizeEl = document.getElementById('file-size');
+  var banner = document.getElementById('size-banner');
+  if (byteLen > 100 * 1024) {
+    sizeEl.textContent = kbStr + ' — exceeds 100 KB ⚠';
+    sizeEl.className = 'size-over';
+    banner.textContent = '⚠ Output is ' + kbStr + '. Gmail and some clients may clip emails over 100 KB. Consider reducing content or splitting into multiple emails.';
+    banner.style.display = 'block';
+  } else if (byteLen > 80 * 1024) {
+    sizeEl.textContent = kbStr + ' — approaching 100 KB';
+    sizeEl.className = 'size-warn';
+    banner.textContent = '⚠ Output is ' + kbStr + '. Getting close to the 100 KB Gmail clipping limit. Simplifying complex sections will help.';
+    banner.style.display = 'block';
+  } else {
+    sizeEl.textContent = kbStr;
+    sizeEl.className = '';
+    banner.style.display = 'none';
+  }
+  // Reset to web view and widen the plugin to fit the email comfortably
+  document.getElementById('btn-view-web').classList.add('active');
+  document.getElementById('btn-view-mobile').classList.remove('active');
+  setPreviewWidth('web');
+  resizeUI((_emailWidth || 600) + _UI_PADDING, _UI_DEFAULT_HEIGHT);
+  // Load HTML into iframe with explicit visibility override for web mode
+  document.getElementById('preview-iframe').srcdoc = buildPreviewHtml('web');
+}
+
+// ── Back button ──────────────────────────────────────────────
+document.getElementById('btn-back').addEventListener('click', function() {
+  document.getElementById('preview-panel').classList.remove('active');
+  document.getElementById('shell').style.display = 'flex';
+  _generatedHtml = '';
+  // Clear iframe and restore default plugin width
+  var iframe = document.getElementById('preview-iframe');
+  iframe.srcdoc = '';
+  resizeUI(_UI_DEFAULT_WIDTH, _UI_DEFAULT_HEIGHT);
+});
+
+// ── Web / Mobile toggles ─────────────────────────────────────
+document.getElementById('btn-view-web').addEventListener('click', function() {
+  this.classList.add('active');
+  document.getElementById('btn-view-mobile').classList.remove('active');
+  setPreviewWidth('web');
+  resizeUI((_emailWidth || 600) + _UI_PADDING, _UI_DEFAULT_HEIGHT);
+  // Reload iframe with explicit desktop-visibility overrides
+  document.getElementById('preview-iframe').srcdoc = buildPreviewHtml('web');
+});
+document.getElementById('btn-view-mobile').addEventListener('click', function() {
+  this.classList.add('active');
+  document.getElementById('btn-view-web').classList.remove('active');
+  setPreviewWidth('mobile');
+  resizeUI(_UI_DEFAULT_WIDTH, _UI_DEFAULT_HEIGHT);
+  // Reload iframe with explicit mobile-visibility overrides
+  document.getElementById('preview-iframe').srcdoc = buildPreviewHtml('mobile');
+});
+
+function setPreviewWidth(mode) {
+  var wrap = document.getElementById('preview-iframe-wrap');
+  wrap.style.width = (mode === 'mobile') ? '375px' : (_emailWidth || 600) + 'px';
+}
+
+// ── Auto-size iframe to its content after each load ──────────
+document.getElementById('preview-iframe').addEventListener('load', function() {
+  try {
+    var doc = this.contentDocument || this.contentWindow.document;
+    var h = doc.documentElement.scrollHeight || doc.body.scrollHeight;
+    if (h > 0) this.style.height = h + 'px';
+  } catch(e) {}
+});
+
+// ── Copy HTML ────────────────────────────────────────────────
+document.getElementById('btn-copy-html').addEventListener('click', function() {
+  if (!_generatedHtml) return;
+  var html = buildFinalHtml();
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(html).then(function() {
+      showStatus('Copied to clipboard!', false);
+    }).catch(function() { fallbackCopy(html); });
+  } else {
+    fallbackCopy(html);
+  }
+});
+
+function fallbackCopy(text) {
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0;';
+  document.body.appendChild(ta);
+  ta.focus(); ta.select();
+  try { document.execCommand('copy'); showStatus('Copied!', false); }
+  catch(e) { showStatus('Copy failed.', true); }
+  document.body.removeChild(ta);
+}
+
+// ── Export as HTML ───────────────────────────────────────────
+document.getElementById('btn-export-html').addEventListener('click', function() {
+  if (!_generatedHtml) return;
+  var rawTitle = document.getElementById('inp-email-title').value.trim() || 'email';
+  var filename = rawTitle.replace(/[^a-z0-9_\-\s]/gi, '_').replace(/\s+/g, '_') + '.html';
+  var html = buildFinalHtml();
+  var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showStatus('Downloaded ' + filename, false);
+});
+
+// ── HTML minifier ────────────────────────────────────────────
+// Strips inter-tag whitespace (newlines + indentation added by the
+// generator's ind() calls) without touching any text content.
+// Safe because:
+//   - The >\s+< pattern only matches whitespace that sits BETWEEN a
+//     closing '>' and an opening '<', which is always structural
+//     whitespace in this plugin's output, never meaningful text.
+//   - <p> body text never starts/ends with '>' / '<', so text content
+//     is unaffected.
+//   - &nbsp; entities, width/height attributes, and inline style order
+//     are all untouched.
+//   - Applied only at export/copy time; the internal _generatedHtml
+//     stays pretty-printed for accurate preview rendering.
+function minifyHtml(html) {
+  // 1. Collapse all whitespace-only gaps between tags.
+  var out = html.replace(/>\s+</g, '><');
+  // 2. Remove empty style="" attributes left by conditional code paths.
+  out = out.replace(/ style=""/g, '');
+  return out.trim();
+}
+
+// Replace <title> tag if user has customised the Email Title field,
+// then minify the final output.
+function buildFinalHtml() {
+  var customTitle = document.getElementById('inp-email-title').value.trim();
+  var html = _generatedHtml;
+  if (customTitle) {
+    html = html.replace(/<title>[^<]*<\/title>/, '<title>' + escHtml(customTitle) + '</title>');
+  }
+  return minifyHtml(html);
+}
+
+// ── Utilities ────────────────────────────────────────────────
+function showStatus(msg, isErr) {
+  var el = document.getElementById('status-msg');
+  el.textContent = msg;
+  el.style.color = isErr ? '#c0392b' : '#27ae60';
+  if (!isErr && msg) {
+    setTimeout(function() {
+      if (el.textContent === msg) { el.textContent = ''; }
+    }, 3000);
+  }
+}
+
+function escHtml(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
