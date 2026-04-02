@@ -60,7 +60,7 @@
     --blue:        var(--cobalt-600);  /* #2555D8 — primary action */
     --blue-hover:  var(--cobalt-400);  /* #4070F0 — one stop lighter per spec */
     --tab-active:  var(--graphite-100);
-    --border:      var(--graphite-200);
+    --border:      var(--graphite-100);
     --muted:       var(--graphite-400);
     --placeholder: var(--graphite-400);
     --tooltip-bg:  var(--graphite-900);
@@ -363,23 +363,92 @@
   }
   .tooltip-text {
     display: none;
-    position: absolute;
-    left: 50%;
-    bottom: calc(100% + 6px);
-    transform: translateX(-50%);
+    position: fixed;
     background: var(--tooltip-bg);
     color: #fff;
     font-size: 11px;
     padding: 5px 8px;
     border-radius: 4px;
     pointer-events: none;
-    z-index: 100;
+    z-index: 9999;
+    width: max-content;
     max-width: 200px;
     white-space: normal;
-    text-align: center;
+    text-align: left;
     line-height: 1.4;
   }
-  .tooltip-wrap:hover .tooltip-text { display: block; }
+
+  /* ── Custom select dropdown ────────────────────────────── */
+  .custom-select-wrap {
+    position: relative;
+    width: 100%;
+  }
+  .custom-select-trigger {
+    width: 100%;
+    background: #fff;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' stroke='%2388888D' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 24px 5px 8px;
+    font-size: 12px;
+    color: #1C1C1E;
+    outline: none;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: left;
+    appearance: none;
+    -webkit-appearance: none;
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .custom-select-trigger:focus { border-color: var(--blue); }
+  .custom-select-trigger.open { border-color: var(--blue); }
+  .custom-select-dropdown {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background: rgba(246, 246, 247, 0.72);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(191, 191, 195, 0.45);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.14), 0 1px 4px rgba(0,0,0,0.08);
+    z-index: 200;
+    overflow: hidden;
+    padding: 4px 0;
+  }
+  .custom-select-wrap.open .custom-select-dropdown { display: block; }
+  .custom-select-option {
+    padding: 6px 10px;
+    cursor: pointer;
+    border-radius: 4px;
+    margin: 0 4px;
+  }
+  .custom-select-option:hover { background: var(--graphite-50); }
+  .custom-select-option.selected {
+    background: var(--blue);
+  }
+  .cso-title {
+    font-size: 12px;
+    color: #1C1C1E;
+    display: block;
+    font-weight: 500;
+  }
+  .custom-select-option.selected .cso-title,
+  .custom-select-option.selected .cso-desc { color: #fff; }
+  .cso-desc {
+    font-size: 11px;
+    color: var(--graphite-600);
+    display: block;
+    margin-top: 2px;
+    line-height: 1.4;
+  }
 
   /* ── Toggle ───────────────────────────────────────────── */
   .toggle-row {
@@ -693,14 +762,26 @@
     <div id="settings-overlay-body">
 
       <div class="field-row">
-        <label class="field-label" for="inp-subject">Subject</label>
+        <label class="field-label" for="inp-subject">
+          Subject
+          <span class="tooltip-wrap">
+            <span class="tooltip-icon">i</span>
+            <span class="tooltip-text">The subject line recipients see in their inbox.</span>
+          </span>
+        </label>
         <div class="field-control">
           <input type="text" id="inp-subject" placeholder="Email subject line" data-key="subject">
         </div>
       </div>
 
       <div class="field-row">
-        <label class="field-label" for="ta-preheader">Preheader</label>
+        <label class="field-label" for="ta-preheader">
+          Preheader
+          <span class="tooltip-wrap">
+            <span class="tooltip-icon">i</span>
+            <span class="tooltip-text">The short preview text shown next to (or below) the subject line in most email clients.</span>
+          </span>
+        </label>
         <div class="field-control">
           <textarea id="ta-preheader" placeholder="Preview text shown in inbox" data-key="preheader" rows="2"></textarea>
         </div>
@@ -713,35 +794,65 @@
       </div>
 
       <div class="field-row">
-        <label class="field-label" for="inp-utm-source">Source</label>
+        <label class="field-label" for="inp-utm-source">
+          Source
+          <span class="tooltip-wrap">
+            <span class="tooltip-icon">i</span>
+            <span class="tooltip-text">The origin of the traffic, e.g. newsletter. Appended as utm_source.</span>
+          </span>
+        </label>
         <div class="field-control">
           <input type="text" id="inp-utm-source" placeholder="e.g. newsletter" data-key="utmSource">
         </div>
       </div>
 
       <div class="field-row">
-        <label class="field-label" for="inp-utm-medium">Medium</label>
+        <label class="field-label" for="inp-utm-medium">
+          Medium
+          <span class="tooltip-wrap">
+            <span class="tooltip-icon">i</span>
+            <span class="tooltip-text">The marketing channel, e.g. email. Appended as utm_medium.</span>
+          </span>
+        </label>
         <div class="field-control">
           <input type="text" id="inp-utm-medium" placeholder="e.g. email" data-key="utmMedium">
         </div>
       </div>
 
       <div class="field-row">
-        <label class="field-label" for="inp-utm-campaign">Campaign</label>
+        <label class="field-label" for="inp-utm-campaign">
+          Campaign
+          <span class="tooltip-wrap">
+            <span class="tooltip-icon">i</span>
+            <span class="tooltip-text">The name of the campaign, e.g. spring_sale. Appended as utm_campaign.</span>
+          </span>
+        </label>
         <div class="field-control">
           <input type="text" id="inp-utm-campaign" placeholder="e.g. spring_sale" data-key="utmCampaign">
         </div>
       </div>
 
       <div class="field-row">
-        <label class="field-label" for="inp-utm-content">Content</label>
+        <label class="field-label" for="inp-utm-content">
+          Content
+          <span class="tooltip-wrap">
+            <span class="tooltip-icon">i</span>
+            <span class="tooltip-text">Differentiates links within the same campaign, e.g. hero_cta. Appended as utm_content.</span>
+          </span>
+        </label>
         <div class="field-control">
           <input type="text" id="inp-utm-content" placeholder="e.g. hero_cta" data-key="utmContent">
         </div>
       </div>
 
       <div class="field-row">
-        <label class="field-label" for="inp-utm-term">Term</label>
+        <label class="field-label" for="inp-utm-term">
+          Term
+          <span class="tooltip-wrap">
+            <span class="tooltip-icon">i</span>
+            <span class="tooltip-text">Used for paid search to identify keywords, e.g. email+marketing. Appended as utm_term.</span>
+          </span>
+        </label>
         <div class="field-control">
           <input type="text" id="inp-utm-term" placeholder="e.g. email+marketing" data-key="utmTerm">
         </div>
@@ -751,6 +862,10 @@
       <div class="section-header" style="padding-top:4px;">
         <span>&#128196;</span>
         <span>Custom &lt;head&gt;</span>
+        <span class="tooltip-wrap">
+          <span class="tooltip-icon">i</span>
+          <span class="tooltip-text">Any custom HTML (meta tags, styles, scripts) to inject inside the &lt;head&gt; of the email.</span>
+        </span>
       </div>
 
       <div class="field-row">
@@ -826,26 +941,50 @@
       <div id="section-frame" style="display:none;padding-top:12px;">
 
         <div class="field-row">
-          <label class="field-label" for="sel-frame-type">Frame type</label>
+          <label class="field-label" for="sel-frame-type">
+            Frame type
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">The type of block this is — controls what properties are available and how it behaves in the email.</span>
+            </span>
+          </label>
           <div class="field-control">
-            <select id="sel-frame-type">
-              <option value="">Frame</option>
-              <option value="button">Button</option>
+            <div class="custom-select-wrap" id="custom-sel-frame">
+              <button type="button" class="custom-select-trigger">
+                <span class="custom-select-value">Frame</span>
+              </button>
+              <div class="custom-select-dropdown"></div>
+            </div>
+            <select id="sel-frame-type" style="display:none;">
               <option value="template">Template</option>
+              <option value="">Frame</option>
+              <option value="image">Image</option>
+              <option value="button">Button</option>
             </select>
-            <p class="frame-type-desc" id="desc-frame-type">A section inside the email. Used to create rows, columns, and content blocks like headers or footers.</p>
           </div>
         </div>
 
         <div class="field-row">
-          <label class="field-label" for="inp-href">Link URL</label>
+          <label class="field-label" for="inp-href">
+            Action URL
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">URL of the destination the user lands on after clicking this frame.</span>
+            </span>
+          </label>
           <div class="field-control">
             <input type="text" id="inp-href" placeholder="https://figma.com" data-key="href">
           </div>
         </div>
 
         <div class="field-row">
-          <label class="field-label" for="sel-visibility">Visibility</label>
+          <label class="field-label" for="sel-visibility">
+            Visibility
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">Controls which devices this element appears on — desktop, mobile, or both.</span>
+            </span>
+          </label>
           <div class="field-control">
             <select id="sel-visibility" data-key="visibility">
               <option value="">Mobile &amp; Desktop</option>
@@ -856,21 +995,39 @@
         </div>
 
         <div class="field-row">
-          <label class="field-label" for="inp-class">Class</label>
+          <label class="field-label" for="inp-class">
+            Class
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">Add a CSS class name to this element for custom styling.</span>
+            </span>
+          </label>
           <div class="field-control">
             <input type="text" id="inp-class" placeholder="Some class" data-key="class">
           </div>
         </div>
 
         <div class="field-row">
-          <label class="field-label" for="inp-id">ID</label>
+          <label class="field-label" for="inp-id">
+            ID
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">A unique identifier for this element, useful for targeting with CSS or scripts.</span>
+            </span>
+          </label>
           <div class="field-control">
             <input type="text" id="inp-id" placeholder="Some ID" data-key="id">
           </div>
         </div>
 
         <div class="field-row">
-          <label class="field-label" for="inp-comment">Comment</label>
+          <label class="field-label" for="inp-comment">
+            Comment
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">An internal note — not visible in the email, just for your reference.</span>
+            </span>
+          </label>
           <div class="field-control">
             <input type="text" id="inp-comment" placeholder="Comment" data-key="comment">
           </div>
@@ -881,7 +1038,7 @@
             Code
             <span class="tooltip-wrap">
               <span class="tooltip-icon">i</span>
-              <span class="tooltip-text">The following code will be exported in the email instead of this frame</span>
+              <span class="tooltip-text">Custom HTML or inline code to inject directly into this element.</span>
             </span>
           </label>
           <div class="field-control">
@@ -889,52 +1046,180 @@
           </div>
         </div>
 
-        <!-- Export as Image toggle -->
-        <div class="toggle-row">
-          <div class="toggle-label">
-            <span>&#128444;</span>
-            <span>Export as Image</span>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" id="tog-export-img">
-            <span class="toggle-track"></span>
-            <span class="toggle-thumb"></span>
+      </div><!-- /section-frame -->
+
+      <!-- ─ Section: Image ────────────────────────────── -->
+      <div id="section-image" style="display:none;padding-top:12px;">
+
+        <div class="field-row">
+          <label class="field-label" for="sel-img-frame-type">
+            Frame type
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">The type of block this is — controls what properties are available and how it behaves in the email.</span>
+            </span>
           </label>
-        </div>
-        <div class="sub-fields" id="export-img-fields">
-          <div class="field-row">
-            <label class="field-label" for="inp-src">Source URL</label>
-            <div class="field-control">
-              <input type="text" id="inp-src" placeholder="https://" data-key="src">
+          <div class="field-control">
+            <div class="custom-select-wrap" id="custom-sel-image">
+              <button type="button" class="custom-select-trigger">
+                <span class="custom-select-value">Image</span>
+              </button>
+              <div class="custom-select-dropdown"></div>
             </div>
-          </div>
-          <div class="field-row">
-            <label class="field-label" for="inp-alt">Alt text</label>
-            <div class="field-control">
-              <input type="text" id="inp-alt" placeholder="Some alt text" data-key="alt">
-            </div>
+            <select id="sel-img-frame-type" style="display:none;">
+              <option value="template">Template</option>
+              <option value="">Frame</option>
+              <option value="image">Image</option>
+              <option value="button">Button</option>
+            </select>
           </div>
         </div>
 
-      </div><!-- /section-frame -->
+        <div class="field-row">
+          <label class="field-label" for="inp-src">
+            Source URL
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">Enter CDN URL of the image. This is the link where the image is hosted.</span>
+            </span>
+          </label>
+          <div class="field-control">
+            <input type="text" id="inp-src" placeholder="https://" data-key="src">
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label class="field-label" for="inp-alt">
+            Alt text
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">A short description of the image, shown when the image can't load and used by screen readers.</span>
+            </span>
+          </label>
+          <div class="field-control">
+            <input type="text" id="inp-alt" placeholder="Some alt text" data-key="alt">
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label class="field-label" for="inp-img-href">
+            Action URL
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">URL of the destination the user lands on after clicking this image.</span>
+            </span>
+          </label>
+          <div class="field-control">
+            <input type="text" id="inp-img-href" placeholder="https://figma.com" data-key="href">
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label class="field-label" for="sel-img-visibility">
+            Visibility
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">Controls which devices this element appears on — desktop, mobile, or both.</span>
+            </span>
+          </label>
+          <div class="field-control">
+            <select id="sel-img-visibility" data-key="visibility">
+              <option value="">Mobile &amp; Desktop</option>
+              <option value="mobile">Mobile only</option>
+              <option value="desktop">Desktop only</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label class="field-label" for="inp-img-class">
+            Class
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">Add a CSS class name to this element for custom styling.</span>
+            </span>
+          </label>
+          <div class="field-control">
+            <input type="text" id="inp-img-class" placeholder="Some class" data-key="class">
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label class="field-label" for="inp-img-id">
+            ID
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">A unique identifier for this element, useful for targeting with CSS or scripts.</span>
+            </span>
+          </label>
+          <div class="field-control">
+            <input type="text" id="inp-img-id" placeholder="Some ID" data-key="id">
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label class="field-label" for="inp-img-comment">
+            Comment
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">An internal note — not visible in the email, just for your reference.</span>
+            </span>
+          </label>
+          <div class="field-control">
+            <input type="text" id="inp-img-comment" placeholder="Comment" data-key="comment">
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label class="field-label" for="inp-img-rawcode">
+            Code
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">Custom HTML or inline code to inject directly into this element.</span>
+            </span>
+          </label>
+          <div class="field-control">
+            <input type="text" id="inp-img-rawcode" placeholder="Code" data-key="rawCode">
+          </div>
+        </div>
+
+      </div><!-- /section-image -->
 
       <!-- ─ Section: Button ───────────────────────────── -->
       <div id="section-button" style="display:none;padding-top:12px;">
 
         <div class="field-row">
-          <label class="field-label" for="sel-btn-frame-type">Frame type</label>
+          <label class="field-label" for="sel-btn-frame-type">
+            Frame type
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">The type of block this is — controls what properties are available and how it behaves in the email.</span>
+            </span>
+          </label>
           <div class="field-control">
-            <select id="sel-btn-frame-type">
-              <option value="">Frame</option>
-              <option value="button">Button</option>
+            <div class="custom-select-wrap" id="custom-sel-button">
+              <button type="button" class="custom-select-trigger">
+                <span class="custom-select-value">Button</span>
+              </button>
+              <div class="custom-select-dropdown"></div>
+            </div>
+            <select id="sel-btn-frame-type" style="display:none;">
               <option value="template">Template</option>
+              <option value="">Frame</option>
+              <option value="image">Image</option>
+              <option value="button">Button</option>
             </select>
-            <p class="frame-type-desc" id="desc-btn-frame-type">A CTA block that generates email-compatible HTML for all major clients.</p>
           </div>
         </div>
 
         <div class="field-row">
-          <label class="field-label" for="inp-btn-link">Button link</label>
+          <label class="field-label" for="inp-btn-link">
+            Button link
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">URL of the destination the user lands on after clicking this button.</span>
+            </span>
+          </label>
           <div class="field-control">
             <input type="text" id="inp-btn-link" placeholder="#" data-key="href">
           </div>
@@ -943,6 +1228,10 @@
         <div class="toggle-row">
           <div class="toggle-label">
             <span>Full width on mobile</span>
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">When enabled, the button stretches to fill the full width of the screen on mobile devices.</span>
+            </span>
           </div>
           <label class="toggle">
             <input type="checkbox" id="tog-full-width">
@@ -957,14 +1246,26 @@
       <div id="section-template" style="display:none;padding-top:12px;">
 
         <div class="field-row">
-          <label class="field-label" for="sel-tmpl-frame-type">Frame type</label>
+          <label class="field-label" for="sel-tmpl-frame-type">
+            Frame type
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">The type of block this is — controls what properties are available and how it behaves in the email.</span>
+            </span>
+          </label>
           <div class="field-control">
-            <select id="sel-tmpl-frame-type">
-              <option value="">Frame</option>
-              <option value="button">Button</option>
+            <div class="custom-select-wrap" id="custom-sel-template">
+              <button type="button" class="custom-select-trigger">
+                <span class="custom-select-value">Template</span>
+              </button>
+              <div class="custom-select-dropdown"></div>
+            </div>
+            <select id="sel-tmpl-frame-type" style="display:none;">
               <option value="template">Template</option>
+              <option value="">Frame</option>
+              <option value="image">Image</option>
+              <option value="button">Button</option>
             </select>
-            <p class="frame-type-desc" id="desc-tmpl-frame-type">The outermost email container. Sets the global width, background color, and wraps all content inside.</p>
           </div>
         </div>
 
@@ -1127,18 +1428,26 @@ function renderBpRow(role, name) {
 
 // ── Frame type section switching ────────────────────────────
 function showSection(frameType) {
-  var isFrame    = (!frameType || frameType === '' || frameType === 'image' || frameType === 'divider' || frameType === 'section');
+  var isFrame    = (!frameType || frameType === '' || frameType === 'divider' || frameType === 'section');
   var isButton   = (frameType === 'button');
   var isTemplate = (frameType === 'template');
+  var isImage    = (frameType === 'image');
   document.getElementById('section-frame').style.display    = isFrame    ? 'block' : 'none';
   document.getElementById('section-button').style.display   = isButton   ? 'block' : 'none';
   document.getElementById('section-template').style.display = isTemplate ? 'block' : 'none';
+  document.getElementById('section-image').style.display    = isImage    ? 'block' : 'none';
   document.getElementById('no-selection').style.display     = 'none';
-  // Keep all three dropdowns in sync
+  // Keep all four dropdowns in sync
   document.getElementById('sel-frame-type').value      = frameType || '';
   document.getElementById('sel-btn-frame-type').value  = frameType || '';
   document.getElementById('sel-tmpl-frame-type').value = frameType || '';
-  updateFrameTypeDescs(frameType || '');
+  document.getElementById('sel-img-frame-type').value  = frameType || '';
+  if (customSelects) {
+    customSelects.frame.setValue(frameType || '');
+    customSelects.button.setValue(frameType || '');
+    customSelects.template.setValue(frameType || '');
+    customSelects.image.setValue(frameType || '');
+  }
 }
 
 function showNoSelection() {
@@ -1146,29 +1455,128 @@ function showNoSelection() {
   document.getElementById('section-frame').style.display    = 'none';
   document.getElementById('section-button').style.display   = 'none';
   document.getElementById('section-template').style.display = 'none';
+  document.getElementById('section-image').style.display    = 'none';
 }
 
-// ── Frame type descriptions ───────────────────────────────────
-var FRAME_TYPE_DESCS = {
-  '':         'A section inside the email. Used to create rows, columns, and content blocks like headers or footers.',
-  'button':   'A CTA block that generates email-compatible HTML for all major clients.',
-  'template': 'The outermost email container. Sets the global width, background color, and wraps all content inside.'
-};
-function updateFrameTypeDescs(val) {
-  var desc = FRAME_TYPE_DESCS.hasOwnProperty(val) ? FRAME_TYPE_DESCS[val] : FRAME_TYPE_DESCS[''];
-  ['desc-frame-type', 'desc-btn-frame-type', 'desc-tmpl-frame-type'].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) el.textContent = desc;
+// ── Custom frame-type dropdowns ───────────────────────────────
+var FRAME_TYPE_OPTIONS = [
+  { value: 'template', title: 'Template', desc: 'The outermost email container. Sets the global width, background color, and wraps all content inside.' },
+  { value: '',         title: 'Frame',    desc: 'A structural container for grouping and laying out content blocks within the email.' },
+  { value: 'image',    title: 'Image',    desc: 'A static image block that renders an image or GIF from a source URL.' },
+  { value: 'button',   title: 'Button',   desc: 'A CTA block that generates email-compatible HTML for all major clients.' }
+];
+
+function initCustomSelect(wrapId, hiddenSelectId) {
+  var wrap         = document.getElementById(wrapId);
+  var trigger      = wrap.querySelector('.custom-select-trigger');
+  var valueSpan    = wrap.querySelector('.custom-select-value');
+  var dropdown     = wrap.querySelector('.custom-select-dropdown');
+  var hiddenSelect = document.getElementById(hiddenSelectId);
+
+  // Render options
+  FRAME_TYPE_OPTIONS.forEach(function(opt) {
+    var item = document.createElement('div');
+    item.className = 'custom-select-option';
+    item.dataset.value = opt.value;
+    item.innerHTML = '<span class="cso-title">' + opt.title + '</span><span class="cso-desc">' + opt.desc + '</span>';
+    item.addEventListener('click', function() {
+      applyOption(opt.value, opt.title);
+      var evt = new Event('change', { bubbles: true });
+      hiddenSelect.dispatchEvent(evt);
+    });
+    dropdown.appendChild(item);
+  });
+
+  function applyOption(value, title) {
+    valueSpan.textContent = title;
+    hiddenSelect.value = value;
+    dropdown.querySelectorAll('.custom-select-option').forEach(function(el) {
+      el.classList.toggle('selected', el.dataset.value === value);
+    });
+    wrap.classList.remove('open');
+    trigger.classList.remove('open');
+  }
+
+  trigger.addEventListener('click', function(e) {
+    e.stopPropagation();
+    var isOpen = wrap.classList.contains('open');
+    closeAllCustomSelects();
+    if (!isOpen) {
+      wrap.classList.add('open');
+      trigger.classList.add('open');
+    }
+  });
+
+  return {
+    setValue: function(value) {
+      var opt = FRAME_TYPE_OPTIONS.filter(function(o) { return o.value === value; })[0];
+      if (opt) applyOption(opt.value, opt.title);
+    }
+  };
+}
+
+function closeAllCustomSelects() {
+  document.querySelectorAll('.custom-select-wrap.open').forEach(function(w) {
+    w.classList.remove('open');
+    w.querySelector('.custom-select-trigger').classList.remove('open');
   });
 }
+document.addEventListener('click', closeAllCustomSelects);
+
+// ── Smart tooltip positioning ────────────────────────────────
+function initTooltips() {
+  document.querySelectorAll('.tooltip-wrap').forEach(function(wrap) {
+    var tooltip = wrap.querySelector('.tooltip-text');
+    if (!tooltip) return;
+
+    wrap.addEventListener('mouseenter', function() {
+      tooltip.style.display = 'block';
+
+      var rect   = wrap.getBoundingClientRect();
+      var tw     = tooltip.offsetWidth;
+      var th     = tooltip.offsetHeight;
+      var margin = 8;
+
+      // Horizontal: centre on the icon, clamp to viewport
+      var cx   = rect.left + rect.width / 2;
+      var left = cx - tw / 2;
+      if (left < margin) left = margin;
+      if (left + tw > window.innerWidth - margin) left = window.innerWidth - margin - tw;
+      tooltip.style.left = left + 'px';
+
+      // Vertical: prefer above, fall back to below
+      var spaceAbove = rect.top;
+      var spaceBelow = window.innerHeight - rect.bottom;
+      if (spaceAbove >= th + 10) {
+        tooltip.style.top = (rect.top - th - 6) + 'px';
+      } else {
+        tooltip.style.top = (rect.bottom + 6) + 'px';
+      }
+    });
+
+    wrap.addEventListener('mouseleave', function() {
+      tooltip.style.display = 'none';
+    });
+  });
+}
+initTooltips();
+
+var customSelects = {
+  frame:    initCustomSelect('custom-sel-frame',    'sel-frame-type'),
+  button:   initCustomSelect('custom-sel-button',   'sel-btn-frame-type'),
+  template: initCustomSelect('custom-sel-template', 'sel-tmpl-frame-type'),
+  image:    initCustomSelect('custom-sel-image',    'sel-img-frame-type')
+};
 
 // ── Frame type dropdown changes ──────────────────────────────
-['sel-frame-type', 'sel-btn-frame-type', 'sel-tmpl-frame-type'].forEach(function(selId) {
+['sel-frame-type', 'sel-btn-frame-type', 'sel-tmpl-frame-type', 'sel-img-frame-type'].forEach(function(selId) {
   document.getElementById(selId).addEventListener('change', function() {
     var val = this.value;
     parent.postMessage({ pluginMessage: { type: 'update-prop', key: 'frameType', value: val } }, '*');
     showSection(val);
-    updateFrameTypeDescs(val);
+    // Keep the in-memory node config in sync so top bar reflects the new type immediately
+    if (_currentNode && _currentNode.cfg) { _currentNode.cfg.frameType = val || null; }
+    updatePreviewBtn(val === 'template');
   });
 });
 
@@ -1180,16 +1588,6 @@ function wireEl(el) {
   });
 }
 document.querySelectorAll('[data-key]').forEach(wireEl);
-
-// ── Export as Image toggle ───────────────────────────────────
-var togImg    = document.getElementById('tog-export-img');
-var imgFields = document.getElementById('export-img-fields');
-
-togImg.addEventListener('change', function() {
-  var on = togImg.checked;
-  imgFields.classList.toggle('expanded', on);
-  parent.postMessage({ pluginMessage: { type: 'update-prop', key: 'exportImg', value: on } }, '*');
-});
 
 // ── Full width on mobile toggle ──────────────────────────────
 document.getElementById('tog-full-width').addEventListener('change', function() {
@@ -1215,10 +1613,16 @@ function populateForm(cfg) {
   setInputVal('inp-utm-content',  cfg.utmContent  || '');
   setInputVal('inp-utm-term',     cfg.utmTerm     || '');
   setInputVal('ta-head',          cfg.head        || '');
+  // Frame section
   document.getElementById('sel-visibility').value = cfg.visibility || '';
-  var imgOn = !!(cfg.exportImg);
-  togImg.checked = imgOn;
-  imgFields.classList.toggle('expanded', imgOn);
+  // Image section
+  setInputVal('inp-img-href',     cfg.href        || '');
+  setInputVal('inp-img-class',    cfg.className   || '');
+  setInputVal('inp-img-id',       cfg.id          || '');
+  setInputVal('inp-img-comment',  cfg.comment     || '');
+  setInputVal('inp-img-rawcode',  cfg.rawCode     || '');
+  var selImgVis = document.getElementById('sel-img-visibility');
+  if (selImgVis) selImgVis.value = cfg.visibility || '';
   document.getElementById('tog-full-width').checked = !!(cfg.fullWidthMobile);
 }
 
