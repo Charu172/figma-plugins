@@ -1213,6 +1213,23 @@ function _innerRenderNode(node, cfg, d, insideRounded, parentCellAlign) {
       }
     }
 
+    // Pre-compute packed-content info for cell alignment.
+    // A "packed-content" table is a fill-width parent whose children are all
+    // fixed/hug (fillCount === 0). By Figma's layout semantics this is always
+    // a compact group — if the designer wanted content to fill the row they
+    // would have given a child FILL sizing or used SPACE_BETWEEN. We use this
+    // flag solely to set each cell's alignment to packAlign (the frame's own
+    // primary-axis pack direction: left/center/right) rather than to each
+    // child's counterAxisAlignItems. This keeps cell alignment consistent with
+    // the designed pack direction and avoids incorrect centering when a child
+    // frame has counterAxisAlignItems=CENTER but the row packs to the left.
+    var _hzCellsContentW = (fillCount === 0 && fixedTotal + totalSpacers > 0)
+      ? (fixedTotal + totalSpacers) : 0;
+    var _hzCellsPackAlign = node.primaryAxisAlignItems === 'CENTER' ? 'center'
+                          : node.primaryAxisAlignItems === 'MAX'    ? 'right'
+                          : 'left';
+    var _isHzCellsTbl = isFill && !isMobileFluid && _hzCellsContentW > 0;
+
     var cells = '';
     var lastNonSpacerIdx = kids.length - 1;
     for (var ci = 0; ci < kids.length; ci++) {
@@ -1235,6 +1252,11 @@ function _innerRenderNode(node, cfg, d, insideRounded, parentCellAlign) {
       } else if (kid.counterAxisAlignItems) {
         kidHAlign = hAlign(kid.counterAxisAlignItems);
       }
+      // hz-cells alignment fix: for packed-content tables, override kidHAlign to
+      // packAlign. This propagates into both the <td align="..."> attribute and,
+      // via parentCellAlign → hzOuterAlign in renderNode, the child's inner wrapper
+      // table — so all levels stay anchored when Gmail iOS expands the table to 100%.
+      if (_isHzCellsTbl) { kidHAlign = _hzCellsPackAlign; }
 
       // In mobile-fluid mode the parent table is width:100%.
       // Only FILL children must lose their explicit TD width — they are fluid by
@@ -1365,19 +1387,26 @@ function _innerRenderNode(node, cfg, d, insideRounded, parentCellAlign) {
     var tblWAttr   = innerTblW ? ' width="' + innerTblW + '" align="' + innerTblAlign + '"' : ' width="100%"';
     var tblWSty    = innerTblW ? 'width:' + innerTblW + 'px;max-width:' + innerTblW + 'px;' + innerTblMargin : 'width:100%;';
 
-    // hz-cells class: marks inner cells tables that use the contentOnlyW pixel
-    // width (fill-width parent, all-fixed/hug children — e.g. a banner where
-    // the fill text child was not detected as FILL, or an icon+label row).
-    // In Gmail iOS, these tables can appear narrower than the email-container
-    // because Gmail renders emails at their declared width (600px) first, then
-    // scales down — a 566px cells table inside a 600px container gets 17px
-    // symmetric margins that are then baked into the scaled-down render.
-    // The u+#body CSS rule below overrides their width to 100% for Gmail iOS
-    // only, eliminating the side margins. In all other clients the explicit TD
-    // widths still govern column sizing, so the pack-together behaviour is
-    // preserved by the browser's auto table-layout algorithm.
-    var isPackedContentTbl = (isFill && !isMobileFluid && contentOnlyW > 0);
-    var tblClassAttr = isPackedContentTbl ? ' class="hz-cells"' : '';
+    // hz-cells was previously used to force packed-content tables to width:100%
+    // in Gmail iOS (via a u+#body CSS rule) to eliminate scaled-in side margins.
+    // It has been removed because:
+    // 1. Semantics: a fill-width parent with all-fixed/hug children is always a
+    //    compact group by Figma's own layout model. The u+#body expansion was
+    //    only ever correct for the edge case of a wide banner whose fill-width
+    //    child was mis-classified as fixed — a fill-detection failure, not a
+    //    feature. The correct remedy for that edge case is accurate fill
+    //    detection, not a broad CSS expansion.
+    // 2. Harm: when the rule fires on any compact group that has gap/spacer TDs
+    //    (stats rows, author rows, social-icon clusters), those spacers absorb
+    //    all the extra space (often 400px+) because auto table-layout treats
+    //    content-free TDs as elastic. This completely breaks the layout on every
+    //    client where u+#body is active — far worse than the original artifact.
+    // 3. Asymmetry: a false positive (class applied to compact group) breaks the
+    //    layout everywhere; a false negative (class absent from a near-full-width
+    //    banner) shows a subtle scaled-in margin on Gmail iOS only. The risk is
+    //    one-sided and clearly favours never emitting the class.
+    var isPackedContentTbl = false;
+    var tblClassAttr = '';
 
     var tblW       = useFixedW ? nodeW : null;
     var outerWAttr = tblW ? ' width="' + tblW + '" align="' + hzOuterAlign + '"' : ' width="100%"';
@@ -1594,6 +1623,40 @@ function renderNode(node, d, insideRounded, parentCellAlign) {
   return html;
 }
 
+// ── UTM helpers ───────────────────────────────────────────────
+// buildUtmString — assembles a utm_* query string from parts.
+// Returns '' when no parts are provided so callers can guard cheaply.
+function buildUtmString(src, medium, campaign, content, term) {
+  var parts = [];
+  if (src)      parts.push('utm_source='   + encodeURIComponent(src));
+  if (medium)   parts.push('utm_medium='   + encodeURIComponent(medium));
+  if (campaign) parts.push('utm_campaign=' + encodeURIComponent(campaign));
+  if (content)  parts.push('utm_content='  + encodeURIComponent(content));
+  if (term)     parts.push('utm_term='     + encodeURIComponent(term));
+  return parts.join('&');
+}
+
+// appendUtmToUrl — appends utmString to a single URL.
+// Guards: skips empty URLs, anchor-only (#), non-http schemes
+// (mailto:, tel: etc.), and URLs that already carry utm_ params.
+function appendUtmToUrl(url, utmString) {
+  if (!utmString || !url || url === '#') return url;
+  if (url.indexOf('http://') !== 0 && url.indexOf('https://') !== 0) return url;
+  if (url.indexOf('utm_') !== -1) return url;
+  return url + (url.indexOf('?') !== -1 ? '&' : '?') + utmString;
+}
+
+// appendUtmToHtml — post-processes a full HTML string and appends
+// UTM params to every href="..." attribute that qualifies.
+// Uses a simple regex over the final rendered string so no rendering
+// logic needs to be changed.
+function appendUtmToHtml(html, utmString) {
+  if (!utmString) return html;
+  return html.replace(/href="([^"]+)"/g, function(match, url) {
+    return 'href="' + appendUtmToUrl(url, utmString) + '"';
+  });
+}
+
 // ══════════════════════════════════════════════════════════════
 // generateEmailHtml — builds complete HTML document
 // ══════════════════════════════════════════════════════════════
@@ -1637,7 +1700,7 @@ function generateEmailHtml(tmpl, config) {
     (utmContent  ? '<meta name="utm-content"  content="' + escapeHtml(utmContent)  + '">\n' : '') +
     (utmTerm     ? '<meta name="utm-term"     content="' + escapeHtml(utmTerm)     + '">\n' : '');
 
-  return '<!DOCTYPE html>\n' +
+  var _html = '<!DOCTYPE html>\n' +
 '<html lang="en" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">\n' +
 '<head>\n' +
 '<meta charset="UTF-8">\n' +
@@ -1703,18 +1766,6 @@ utmMetaTags +
 '  u + #body .email-container {\n' +
 '    width: 100% !important;\n' +
 '    max-width: ' + emailWidth + 'px !important;\n' +
-'  }\n' +
-'  /* Gmail iOS renders at the email\'s declared width then scales down.\n' +
-'     Horizontal-layout cells tables pinned to a sub-' + emailWidth + 'px pixel width\n' +
-'     (the "pack-content" pattern: fill parent, all-fixed/hug children) appear\n' +
-'     narrower than their container in Gmail iOS\'s internal viewport, creating\n' +
-'     visible side margins on sections with a distinct background colour (e.g.\n' +
-'     a coloured banner). Forcing them to width:100% in Gmail iOS eliminates the\n' +
-'     margins; the TDs\' explicit pixel widths still control column sizing via\n' +
-'     the browser\'s auto table-layout, so items still pack together. */\n' +
-'  u + #body .email-container .hz-cells {\n' +
-'    width: 100% !important;\n' +
-'    max-width: 100% !important;\n' +
 '  }\n' +
 '  /* Gmail iOS does not apply @media queries, so the .fill-col width:auto\n' +
 '     override that normally fires on narrow viewports never runs. Without it,\n' +
@@ -1820,6 +1871,8 @@ ind(1) + '</tr>\n' +
 '</table>\n' +
 '</body>\n' +
 '</html>';
+  var _utmStr = buildUtmString(utmSource, utmMedium, utmCampaign, utmContent, utmTerm);
+  return appendUtmToHtml(_html, _utmStr);
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1955,7 +2008,7 @@ function generateBreakpointEmailHtml(desktopNode, mobileNode, config) {
     (utmContent  ? '<meta name="utm-content"  content="' + escapeHtml(utmContent)  + '">\n' : '') +
     (utmTerm     ? '<meta name="utm-term"     content="' + escapeHtml(utmTerm)     + '">\n' : '');
 
-  return '<!DOCTYPE html>\n' +
+  var _bpHtml = '<!DOCTYPE html>\n' +
 '<html lang="en" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">\n' +
 '<head>\n' +
 '<meta charset="UTF-8">\n' +
@@ -2021,18 +2074,6 @@ bpUtmMetaTags +
 '  u + #body .email-container {\n' +
 '    width: 100% !important;\n' +
 '    max-width: ' + desktopWidth + 'px !important;\n' +
-'  }\n' +
-'  /* Gmail iOS renders at the email\'s declared width then scales down.\n' +
-'     Horizontal-layout cells tables pinned to a sub-' + desktopWidth + 'px pixel width\n' +
-'     (the "pack-content" pattern: fill parent, all-fixed/hug children) appear\n' +
-'     narrower than their container in Gmail iOS\'s internal viewport, creating\n' +
-'     visible side margins on sections with a distinct background colour (e.g.\n' +
-'     a coloured banner). Forcing them to width:100% in Gmail iOS eliminates the\n' +
-'     margins; the TDs\' explicit pixel widths still control column sizing via\n' +
-'     the browser\'s auto table-layout, so items still pack together. */\n' +
-'  u + #body .email-container .hz-cells {\n' +
-'    width: 100% !important;\n' +
-'    max-width: 100% !important;\n' +
 '  }\n' +
 '  /* Gmail iOS does not apply @media queries, so the .fill-col width:auto\n' +
 '     override that normally fires on narrow viewports never runs. Without it,\n' +
@@ -2118,6 +2159,8 @@ ind(1) + '</tr>\n' +
 '</table>\n' +
 '</body>\n' +
 '</html>';
+  var _bpUtmStr = buildUtmString(utmSource, utmMedium, utmCampaign, utmContent, utmTerm);
+  return appendUtmToHtml(_bpHtml, _bpUtmStr);
 }
 
 // ══════════════════════════════════════════════════════════════
