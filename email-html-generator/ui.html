@@ -4,7 +4,23 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Email HTML Generator — Compatible with Gmail, Outlook, iOS &amp; More</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
 <style>
+  /* ── Material Symbols ────────────────────────────────── */
+  .mat-icon {
+    font-family: 'Material Symbols Outlined';
+    font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20;
+    font-style: normal;
+    font-weight: normal;
+    font-size: 18px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    flex-shrink: 0;
+  }
+
   /* ── Reset & base ─────────────────────────────────────── */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html, body {
@@ -113,20 +129,7 @@
   #btn-preview:hover { background: var(--blue-hover); }
   #btn-preview:disabled { opacity: 0.5; cursor: default; }
 
-  /* ── Properties panel header ─────────────────────────── */
-  #panel-header {
-    display: flex;
-    align-items: center;
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-  #panel-header-title {
-    flex: 1;
-    font-size: 13px;
-    font-weight: 600;
-    color: #1C1C1E;
-  }
+  /* ── Context-bar icon buttons (settings + export) ─────── */
   #btn-open-export, #btn-settings {
     background: none;
     border: none;
@@ -140,7 +143,6 @@
     line-height: 1;
   }
   #btn-open-export:hover, #btn-settings:hover { background: var(--graphite-50); }
-  #btn-open-export svg, #btn-settings svg { display: block; }
   #btn-settings, #btn-open-export { display: none; flex-shrink: 0; }
   #btn-settings.visible, #btn-open-export.visible { display: inline-flex; }
 
@@ -575,6 +577,54 @@
   }
   .btn-clear-frame:hover { background: var(--graphite-50); color: #1C1C1E; }
 
+  /* ── Mobile settings section ─────────────────────────── */
+  .mobile-section-header {
+    padding: 12px 0 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #1C1C1E;
+  }
+  /* Padding 2×2 grid */
+  .mob-pad-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .mob-pad-cell {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 8px;
+    cursor: text;
+  }
+  .mob-pad-cell:focus-within { border-color: var(--blue); }
+  .mob-pad-key {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: inherit;
+    user-select: none;
+    flex-shrink: 0;
+  }
+  .mob-pad-cell input[type="number"] {
+    border: none;
+    background: transparent;
+    outline: none;
+    width: 100%;
+    font-size: 12px;
+    color: #1C1C1E;
+    font-family: inherit;
+    padding: 0;
+    -moz-appearance: textfield;
+  }
+  .mob-pad-cell input[type="number"]::-webkit-outer-spin-button,
+  .mob-pad-cell input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
   /* ── Preview panel ────────────────────────────────────── */
   #preview-panel {
     display: none;
@@ -715,6 +765,239 @@
     margin-bottom: 8px;
     color: var(--error);  /* Cobalt+Graphite — Semantic Error */
   }
+
+  /* ── Tab bar (replaces panel-header) ─────────────────── */
+  #tab-bar {
+    display: flex;
+    align-items: flex-end;
+    padding: 0 8px 0 4px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    gap: 0;
+  }
+  .tab-btn {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 9px 8px;
+    margin-bottom: -1px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+    font-family: inherit;
+    line-height: 1;
+  }
+  .tab-btn.active { color: var(--graphite-900); border-bottom-color: var(--graphite-900); }
+  .tab-btn:hover:not(.active) { color: var(--graphite-600); }
+  .tab-spacer { flex: 1; }
+  .tab-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .tab-badge.b-error   { background: var(--error-bg);     color: var(--error-text); }
+  .tab-badge.b-warning { background: var(--warning-bg);   color: var(--warning-text); }
+  .tab-badge.b-neutral { background: var(--graphite-100); color: var(--graphite-600); }
+
+  /* ── Issues panel layout ─────────────────────────────── */
+  #panel-issues { padding: 0; }
+  #panel-issues.active { display: flex; flex-direction: column; }
+
+  /* Meta row: counts + rescan icon */
+  .issues-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 0 6px;
+  }
+  #issues-counts {
+    font-size: 11px;
+    color: var(--muted);
+  }
+  #btn-rescan {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--muted);
+    padding: 4px;
+    border-radius: 5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: inherit;
+    flex-shrink: 0;
+    position: relative;
+  }
+  #btn-rescan:hover { color: var(--graphite-900); background: var(--graphite-100); }
+  #btn-rescan[data-tooltip]::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    top: calc(100% + 5px);
+    right: 0;
+    left: auto;
+    transform: none;
+    background: var(--tooltip-bg);
+    color: #fff;
+    font-size: 11px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-weight: 400;
+    padding: 4px 7px;
+    border-radius: 4px;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 100ms;
+    z-index: 9999;
+  }
+  #btn-rescan[data-tooltip]:hover::after { opacity: 1; }
+
+  #issues-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 12px 20px;
+  }
+
+  /* State placeholders */
+  .issues-state {
+    text-align: center;
+    padding: 32px 16px;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  .issues-state-icon { font-size: 20px; margin-bottom: 6px; }
+  .issues-state strong { color: var(--graphite-900); }
+
+  /* Accordion group */
+  .issue-accordion { margin-bottom: 2px; }
+  .accordion-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px 0;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--graphite-600);
+    text-align: left;
+    user-select: none;
+  }
+  .accordion-hdr:hover { color: var(--graphite-900); }
+  .accordion-chevron {
+    color: var(--graphite-400);
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .accordion-body { padding-bottom: 4px; }
+
+  /* Issue card */
+  .issue-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 9px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    margin-bottom: 6px;
+    background: #fff;
+    transition: border-color 100ms;
+  }
+  .issue-card:hover { border-color: var(--graphite-200); }
+  .issue-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 4px;
+  }
+  .issue-dot.s-error   { background: var(--error); }
+  .issue-dot.s-warning { background: var(--warning); }
+  .issue-dot.s-info    { background: var(--info); }
+  .issue-body { flex: 1; min-width: 0; }
+  .issue-title {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--graphite-900);
+    line-height: 1.35;
+    margin-bottom: 1px;
+  }
+  .issue-node {
+    font-size: 11px;
+    color: var(--graphite-400);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-bottom: 3px;
+  }
+  .issue-desc {
+    font-size: 11px;
+    color: var(--graphite-600);
+    line-height: 1.45;
+  }
+  /* Issue action icons (view + edit), shown on card hover */
+  .issue-actions {
+    display: none;
+    gap: 2px;
+    flex-shrink: 0;
+    align-self: flex-start;
+  }
+  .issue-card:hover .issue-actions { display: flex; }
+  .btn-issue-action {
+    background: none;
+    border: none;
+    border-radius: 5px;
+    padding: 4px;
+    cursor: pointer;
+    color: var(--graphite-400);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: inherit;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .btn-issue-action:hover {
+    background: var(--graphite-100);
+    color: var(--graphite-900);
+  }
+  /* CSS tooltip via data-tooltip attribute */
+  .btn-issue-action[data-tooltip]::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: calc(100% + 5px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--tooltip-bg);
+    color: #fff;
+    font-size: 11px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-weight: 400;
+    padding: 4px 7px;
+    border-radius: 4px;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 100ms;
+    z-index: 9999;
+  }
+  .btn-issue-action[data-tooltip]:hover::after { opacity: 1; }
 </style>
 </head>
 <body>
@@ -728,19 +1011,10 @@
     <span id="mode-badge">Breakpoints mode</span>
     <!-- Export Mode icon: always visible -->
     <button id="btn-open-export" title="Export Mode">
-      <!-- Material 3 "smartphone" / mobile icon -->
-      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
-        <line x1="12" y1="18" x2="12.01" y2="18"/>
-      </svg>
+      <span class="mat-icon">smartphone</span>
     </button>
-    <!-- Settings icon: visible only when a Template frame is selected -->
     <button id="btn-settings" title="Email settings">
-      <!-- Material 3 "settings" gear icon -->
-      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="3"/>
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-      </svg>
+      <span class="mat-icon">settings</span>
     </button>
     <div id="preview-btn-wrap">
       <button id="btn-preview" disabled>Preview</button>
@@ -748,15 +1022,19 @@
     </div>
   </div>
 
-  <!-- Properties panel header (title only) -->
-  <div id="panel-header">
-    <span id="panel-header-title">Properties</span>
+  <!-- Tab bar: Properties | Issues -->
+  <div id="tab-bar">
+    <button class="tab-btn active" id="tab-properties">Properties</button>
+    <button class="tab-btn" id="tab-issues">
+      Issues
+      <span class="tab-badge" id="issues-badge" style="display:none;"></span>
+    </button>
   </div>
 
   <!-- Settings overlay: Email-level metadata for Template frames -->
   <div id="settings-overlay">
     <div id="settings-overlay-header">
-      <button id="btn-back-settings" title="Back to Properties">&#8592;</button>
+      <button id="btn-back-settings" title="Back to Properties"><span class="mat-icon">arrow_back</span></button>
       <span id="settings-overlay-title">Email Settings</span>
     </div>
     <div id="settings-overlay-body">
@@ -802,7 +1080,7 @@
           </span>
         </label>
         <div class="field-control">
-          <input type="text" id="inp-utm-source" placeholder="e.g. newsletter" data-key="utmSource">
+          <input type="text" id="inp-utm-source" placeholder="Eg. newsletter" data-key="utmSource">
         </div>
       </div>
 
@@ -815,7 +1093,7 @@
           </span>
         </label>
         <div class="field-control">
-          <input type="text" id="inp-utm-medium" placeholder="e.g. email" data-key="utmMedium">
+          <input type="text" id="inp-utm-medium" placeholder="Eg. email" data-key="utmMedium">
         </div>
       </div>
 
@@ -828,7 +1106,7 @@
           </span>
         </label>
         <div class="field-control">
-          <input type="text" id="inp-utm-campaign" placeholder="e.g. spring_sale" data-key="utmCampaign">
+          <input type="text" id="inp-utm-campaign" placeholder="Eg. spring_sale" data-key="utmCampaign">
         </div>
       </div>
 
@@ -841,7 +1119,7 @@
           </span>
         </label>
         <div class="field-control">
-          <input type="text" id="inp-utm-content" placeholder="e.g. hero_cta" data-key="utmContent">
+          <input type="text" id="inp-utm-content" placeholder="Eg. hero_cta" data-key="utmContent">
         </div>
       </div>
 
@@ -854,23 +1132,41 @@
           </span>
         </label>
         <div class="field-control">
-          <input type="text" id="inp-utm-term" placeholder="e.g. email+marketing" data-key="utmTerm">
+          <input type="text" id="inp-utm-term" placeholder="Eg. email+marketing" data-key="utmTerm">
         </div>
       </div>
 
-      <!-- Custom head code -->
+      <!-- Custom injection points -->
       <div class="section-header" style="padding-top:4px;">
         <span>&#128196;</span>
-        <span>Custom &lt;head&gt;</span>
-        <span class="tooltip-wrap">
-          <span class="tooltip-icon">i</span>
-          <span class="tooltip-text">Any custom HTML (meta tags, styles, scripts) to inject inside the &lt;head&gt; of the email.</span>
-        </span>
+        <span>Custom injection</span>
       </div>
 
       <div class="field-row">
+        <label class="field-label" for="ta-head-start">Start of &lt;head&gt;</label>
         <div class="field-control" style="width:100%;">
-          <textarea id="ta-head" class="mono" placeholder="HTML injected inside &lt;head&gt;" data-key="head" rows="5"></textarea>
+          <textarea id="ta-head-start" class="mono" placeholder="Injected after &lt;head&gt;" data-key="headStart" rows="3"></textarea>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label class="field-label" for="ta-head-end">End of &lt;head&gt;</label>
+        <div class="field-control" style="width:100%;">
+          <textarea id="ta-head-end" class="mono" placeholder="Injected before &lt;/head&gt;" data-key="headEnd" rows="3"></textarea>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label class="field-label" for="ta-body-start">Start of &lt;body&gt;</label>
+        <div class="field-control" style="width:100%;">
+          <textarea id="ta-body-start" class="mono" placeholder="Injected after &lt;body&gt;" data-key="bodyStart" rows="3"></textarea>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label class="field-label" for="ta-body-end">End of &lt;body&gt;</label>
+        <div class="field-control" style="width:100%;">
+          <textarea id="ta-body-end" class="mono" placeholder="Injected before &lt;/body&gt;" data-key="bodyEnd" rows="3"></textarea>
         </div>
       </div>
 
@@ -880,7 +1176,7 @@
   <!-- Export overlay (slides over the shell) -->
   <div id="export-overlay">
     <div id="export-overlay-header">
-      <button id="btn-back-export" title="Back to Properties">&#8592;</button>
+      <button id="btn-back-export" title="Back to Properties"><span class="mat-icon">arrow_back</span></button>
       <span id="export-overlay-title">Export Mode</span>
     </div>
     <div id="export-overlay-body">
@@ -973,7 +1269,7 @@
             </span>
           </label>
           <div class="field-control">
-            <input type="text" id="inp-href" placeholder="https://figma.com" data-key="href">
+            <input type="text" id="inp-href" placeholder="Eg. https://yoursite.com/offer" data-key="href">
           </div>
         </div>
 
@@ -994,44 +1290,6 @@
           </div>
         </div>
 
-        <div class="field-row">
-          <label class="field-label" for="inp-class">
-            Class
-            <span class="tooltip-wrap">
-              <span class="tooltip-icon">i</span>
-              <span class="tooltip-text">Add a CSS class name to this element for custom styling.</span>
-            </span>
-          </label>
-          <div class="field-control">
-            <input type="text" id="inp-class" placeholder="Some class" data-key="class">
-          </div>
-        </div>
-
-        <div class="field-row">
-          <label class="field-label" for="inp-id">
-            ID
-            <span class="tooltip-wrap">
-              <span class="tooltip-icon">i</span>
-              <span class="tooltip-text">A unique identifier for this element, useful for targeting with CSS or scripts.</span>
-            </span>
-          </label>
-          <div class="field-control">
-            <input type="text" id="inp-id" placeholder="Some ID" data-key="id">
-          </div>
-        </div>
-
-        <div class="field-row">
-          <label class="field-label" for="inp-comment">
-            Comment
-            <span class="tooltip-wrap">
-              <span class="tooltip-icon">i</span>
-              <span class="tooltip-text">An internal note — not visible in the email, just for your reference.</span>
-            </span>
-          </label>
-          <div class="field-control">
-            <input type="text" id="inp-comment" placeholder="Comment" data-key="comment">
-          </div>
-        </div>
 
         <div class="field-row">
           <label class="field-label" for="inp-rawcode">
@@ -1042,7 +1300,7 @@
             </span>
           </label>
           <div class="field-control">
-            <input type="text" id="inp-rawcode" placeholder="Code" data-key="rawCode">
+            <input type="text" id="inp-rawcode" placeholder="Eg. data-track=&quot;hero&quot;" data-key="rawCode">
           </div>
         </div>
 
@@ -1084,7 +1342,7 @@
             </span>
           </label>
           <div class="field-control">
-            <input type="text" id="inp-src" placeholder="https://" data-key="src">
+            <input type="text" id="inp-src" placeholder="Eg. https://cdn.yoursite.com/banner.png" data-key="src">
           </div>
         </div>
 
@@ -1097,7 +1355,7 @@
             </span>
           </label>
           <div class="field-control">
-            <input type="text" id="inp-alt" placeholder="Some alt text" data-key="alt">
+            <input type="text" id="inp-alt" placeholder="Eg. Woman smiling at laptop" data-key="alt">
           </div>
         </div>
 
@@ -1110,7 +1368,7 @@
             </span>
           </label>
           <div class="field-control">
-            <input type="text" id="inp-img-href" placeholder="https://figma.com" data-key="href">
+            <input type="text" id="inp-img-href" placeholder="Eg. https://yoursite.com/offer" data-key="href">
           </div>
         </div>
 
@@ -1131,44 +1389,6 @@
           </div>
         </div>
 
-        <div class="field-row">
-          <label class="field-label" for="inp-img-class">
-            Class
-            <span class="tooltip-wrap">
-              <span class="tooltip-icon">i</span>
-              <span class="tooltip-text">Add a CSS class name to this element for custom styling.</span>
-            </span>
-          </label>
-          <div class="field-control">
-            <input type="text" id="inp-img-class" placeholder="Some class" data-key="class">
-          </div>
-        </div>
-
-        <div class="field-row">
-          <label class="field-label" for="inp-img-id">
-            ID
-            <span class="tooltip-wrap">
-              <span class="tooltip-icon">i</span>
-              <span class="tooltip-text">A unique identifier for this element, useful for targeting with CSS or scripts.</span>
-            </span>
-          </label>
-          <div class="field-control">
-            <input type="text" id="inp-img-id" placeholder="Some ID" data-key="id">
-          </div>
-        </div>
-
-        <div class="field-row">
-          <label class="field-label" for="inp-img-comment">
-            Comment
-            <span class="tooltip-wrap">
-              <span class="tooltip-icon">i</span>
-              <span class="tooltip-text">An internal note — not visible in the email, just for your reference.</span>
-            </span>
-          </label>
-          <div class="field-control">
-            <input type="text" id="inp-img-comment" placeholder="Comment" data-key="comment">
-          </div>
-        </div>
 
         <div class="field-row">
           <label class="field-label" for="inp-img-rawcode">
@@ -1179,7 +1399,7 @@
             </span>
           </label>
           <div class="field-control">
-            <input type="text" id="inp-img-rawcode" placeholder="Code" data-key="rawCode">
+            <input type="text" id="inp-img-rawcode" placeholder="Eg. data-track=&quot;hero&quot;" data-key="rawCode">
           </div>
         </div>
 
@@ -1221,7 +1441,7 @@
             </span>
           </label>
           <div class="field-control">
-            <input type="text" id="inp-btn-link" placeholder="#" data-key="href">
+            <input type="text" id="inp-btn-link" placeholder="Eg. https://yoursite.com/shop" data-key="href">
           </div>
         </div>
 
@@ -1271,7 +1491,125 @@
 
       </div><!-- /section-template -->
 
+      <!-- ─ Section: Mobile overrides ─────────────────── -->
+      <div id="section-mobile" style="display:none;">
+        <div class="mobile-section-header">Mobile settings</div>
+
+        <!-- Frame mobile settings (auto-layout frames only) -->
+        <div id="mob-frame-fields" style="display:none;">
+
+          <div class="field-row">
+            <label class="field-label" for="sel-mob-stack">Stack</label>
+            <div class="field-control">
+              <select id="sel-mob-stack" data-key="mobileStack">
+                <option value="">Same as desktop</option>
+                <option value="vertical">Stack vertical</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field-row">
+            <label class="field-label" for="sel-mob-align">Align</label>
+            <div class="field-control">
+              <select id="sel-mob-align" data-key="mobileAlign">
+                <option value="">Same as desktop</option>
+                <option value="left">Left</option>
+                <option value="center">Center</option>
+                <option value="right">Right</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field-row">
+            <label class="field-label">Padding</label>
+            <div class="field-control">
+              <div class="mob-pad-grid">
+                <label class="mob-pad-cell">
+                  <span class="mob-pad-key">T</span>
+                  <input type="number" id="inp-mob-pad-top"    min="0" data-key="mobilePadTop">
+                </label>
+                <label class="mob-pad-cell">
+                  <span class="mob-pad-key">R</span>
+                  <input type="number" id="inp-mob-pad-right"  min="0" data-key="mobilePadRight">
+                </label>
+                <label class="mob-pad-cell">
+                  <span class="mob-pad-key">B</span>
+                  <input type="number" id="inp-mob-pad-bottom" min="0" data-key="mobilePadBottom">
+                </label>
+                <label class="mob-pad-cell">
+                  <span class="mob-pad-key">L</span>
+                  <input type="number" id="inp-mob-pad-left"   min="0" data-key="mobilePadLeft">
+                </label>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /mob-frame-fields -->
+
+        <!-- Text mobile settings (text layers only) -->
+        <div id="mob-text-fields" style="display:none;">
+
+          <div class="field-row">
+            <label class="field-label">Font size</label>
+            <div class="field-control">
+              <label class="mob-pad-cell">
+                <input type="number" id="inp-mob-font-size" placeholder="e.g. 16px" min="1" data-key="mobileFontSize">
+              </label>
+            </div>
+          </div>
+
+          <div class="field-row">
+            <label class="field-label">Line height</label>
+            <div class="field-control">
+              <label class="mob-pad-cell">
+                <input type="number" id="inp-mob-line-height" placeholder="e.g. 24px" min="1" data-key="mobileLineHeight">
+              </label>
+            </div>
+          </div>
+
+        </div><!-- /mob-text-fields -->
+
+      </div><!-- /section-mobile -->
+
     </div><!-- /panel-properties -->
+
+    <!-- ── Issues panel ────────────────────────────── -->
+    <div class="panel" id="panel-issues">
+      <div id="issues-scroll">
+
+        <!-- Meta row: counts summary + rescan icon (hidden until a scan runs) -->
+        <div class="issues-meta" style="display:none;">
+          <span id="issues-counts">—</span>
+          <button id="btn-rescan" data-tooltip="Re-scan">
+            <span class="mat-icon" style="font-size:16px;">refresh</span>
+          </button>
+        </div>
+
+        <!-- State: no template set -->
+        <div class="issues-state" id="issues-state-none">
+          <div class="issues-state-icon">⚡</div>
+          <strong>No template selected</strong><br>
+          Select or lock a Template frame first, then switch here to scan.
+        </div>
+
+        <!-- State: scanning -->
+        <div class="issues-state" id="issues-state-scanning" style="display:none;">
+          <div class="issues-state-icon">⏳</div>
+          Scanning your design…
+        </div>
+
+        <!-- State: all clear -->
+        <div class="issues-state" id="issues-state-clear" style="display:none;">
+          <div class="issues-state-icon">✅</div>
+          <strong>No issues found</strong><br>
+          Your design passed all checks.
+        </div>
+
+        <!-- Issue list (populated by JS) -->
+        <div id="issues-list" style="display:none;"></div>
+
+      </div><!-- /issues-scroll -->
+    </div><!-- /panel-issues -->
 
   </div><!-- /panels -->
 </div><!-- /shell -->
@@ -1282,7 +1620,7 @@
 
   <!-- Toolbar -->
   <div id="preview-toolbar">
-    <button id="btn-back" title="Back to plugin">&#8592;</button>
+    <button id="btn-back" title="Back to plugin"><span class="mat-icon">arrow_back</span></button>
     <div class="preview-view-btns">
       <button class="view-btn active" id="btn-view-web">Web</button>
       <button class="view-btn" id="btn-view-mobile">Mobile</button>
@@ -1305,6 +1643,10 @@
         <input type="text" id="inp-email-title" placeholder="Email title">
       </div>
     </div>
+    <label style="display:flex;align-items:center;gap:16px;margin-bottom:8px;cursor:pointer;font-size:12px;color:var(--text);">
+      <input type="checkbox" id="tog-minify" style="width:14px;height:14px;cursor:pointer;accent-color:var(--blue);flex-shrink:0;">
+      Minify HTML
+    </label>
     <div id="size-banner"></div>
     <div id="status-msg"></div>
     <button class="btn-full btn-secondary" id="btn-copy-html">Copy HTML &nbsp; &lt;&gt;</button>
@@ -1321,8 +1663,10 @@ var _currentMode   = 'responsive'; // 'responsive' | 'breakpoints'
 var _bpDesktopId   = null;   // locked desktop frame ID (breakpoints mode)
 var _bpMobileId    = null;   // locked mobile frame ID (breakpoints mode)
 var _respFrameId   = null;   // locked frame ID (responsive mode)
-var _generatedHtml = '';
-var _emailWidth    = 600;
+var _generatedHtml      = '';
+var _emailWidth         = 600;
+var _currentNodeType    = '';    // Figma node type: 'FRAME' | 'TEXT' | etc.
+var _currentNodeLayout  = 'NONE'; // Figma layoutMode: 'HORIZONTAL' | 'VERTICAL' | 'NONE'
 
 // Initialise preview button tooltip (button starts disabled)
 updatePreviewBtn(false);
@@ -1361,7 +1705,7 @@ function setMode(mode) {
 // ── Responsive frame Set / Clear button ─────────────────────
 document.getElementById('btn-set-resp').addEventListener('click', function() {
   if (!_currentNode) return;
-  parent.postMessage({ pluginMessage: { type: 'set-resp-frame' } }, '*');
+  parent.postMessage({ pluginMessage: { type: 'set-resp-frame', nodeId: _currentNode.id } }, '*');
 });
 document.getElementById('btn-clear-resp').addEventListener('click', function() {
   _respFrameId = null;
@@ -1390,11 +1734,11 @@ function renderRespRow(name) {
 // ── Breakpoints frame Set / Clear buttons ───────────────────
 document.getElementById('btn-set-desktop').addEventListener('click', function() {
   if (!_currentNode) return;
-  parent.postMessage({ pluginMessage: { type: 'set-breakpoint-frame', role: 'desktop' } }, '*');
+  parent.postMessage({ pluginMessage: { type: 'set-breakpoint-frame', role: 'desktop', nodeId: _currentNode.id } }, '*');
 });
 document.getElementById('btn-set-mobile').addEventListener('click', function() {
   if (!_currentNode) return;
-  parent.postMessage({ pluginMessage: { type: 'set-breakpoint-frame', role: 'mobile' } }, '*');
+  parent.postMessage({ pluginMessage: { type: 'set-breakpoint-frame', role: 'mobile', nodeId: _currentNode.id } }, '*');
 });
 document.getElementById('btn-clear-desktop').addEventListener('click', function() {
   _bpDesktopId = null;
@@ -1456,6 +1800,7 @@ function showNoSelection() {
   document.getElementById('section-button').style.display   = 'none';
   document.getElementById('section-template').style.display = 'none';
   document.getElementById('section-image').style.display    = 'none';
+  document.getElementById('section-mobile').style.display   = 'none';
 }
 
 // ── Custom frame-type dropdowns ───────────────────────────────
@@ -1580,6 +1925,23 @@ var customSelects = {
   });
 });
 
+// ── Mobile settings visibility ───────────────────────────────
+function updateMobileSection() {
+  var isText       = (_currentNodeType === 'TEXT');
+  var isAutoLayout = (_currentNodeLayout === 'HORIZONTAL' || _currentNodeLayout === 'VERTICAL');
+  // Only show when section-frame is active (not button/template/image)
+  var frameVisible = document.getElementById('section-frame').style.display !== 'none';
+  var vis          = document.getElementById('sel-visibility').value;
+  var showSection  = frameVisible && vis === '' && (isText || isAutoLayout);
+
+  document.getElementById('section-mobile').style.display    = showSection    ? 'block' : 'none';
+  document.getElementById('mob-frame-fields').style.display  = isAutoLayout   ? 'block' : 'none';
+  document.getElementById('mob-text-fields').style.display   = isText         ? 'block' : 'none';
+}
+
+// Re-evaluate mobile section whenever visibility dropdown changes
+document.getElementById('sel-visibility').addEventListener('change', updateMobileSection);
+
 // ── Generic data-key wiring ──────────────────────────────────
 function wireEl(el) {
   var eventName = (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') ? 'change' : 'change';
@@ -1612,7 +1974,10 @@ function populateForm(cfg) {
   setInputVal('inp-utm-campaign', cfg.utmCampaign || '');
   setInputVal('inp-utm-content',  cfg.utmContent  || '');
   setInputVal('inp-utm-term',     cfg.utmTerm     || '');
-  setInputVal('ta-head',          cfg.head        || '');
+  setInputVal('ta-head-start',    cfg.headStart   || '');
+  setInputVal('ta-head-end',      cfg.headEnd     || '');
+  setInputVal('ta-body-start',    cfg.bodyStart   || '');
+  setInputVal('ta-body-end',      cfg.bodyEnd     || '');
   // Frame section
   document.getElementById('sel-visibility').value = cfg.visibility || '';
   // Image section
@@ -1624,6 +1989,17 @@ function populateForm(cfg) {
   var selImgVis = document.getElementById('sel-img-visibility');
   if (selImgVis) selImgVis.value = cfg.visibility || '';
   document.getElementById('tog-full-width').checked = !!(cfg.fullWidthMobile);
+  // Mobile overrides
+  setInputVal('inp-mob-font-size',    cfg.mobileFontSize    || '');
+  setInputVal('inp-mob-line-height',  cfg.mobileLineHeight  || '');
+  setInputVal('inp-mob-pad-top',      cfg.mobilePadTop      || '');
+  setInputVal('inp-mob-pad-right',    cfg.mobilePadRight    || '');
+  setInputVal('inp-mob-pad-bottom',   cfg.mobilePadBottom   || '');
+  setInputVal('inp-mob-pad-left',     cfg.mobilePadLeft     || '');
+  var selMobStack = document.getElementById('sel-mob-stack');
+  var selMobAlign = document.getElementById('sel-mob-align');
+  if (selMobStack) selMobStack.value = cfg.mobileStack || '';
+  if (selMobAlign) selMobAlign.value = cfg.mobileAlign || '';
 }
 
 function setInputVal(id, val) {
@@ -1638,7 +2014,9 @@ window.onmessage = function(event) {
 
   if (msg.type === 'selection') {
     if (!msg.node) {
-      _currentNode = null;
+      _currentNode        = null;
+      _currentNodeType    = '';
+      _currentNodeLayout  = 'NONE';
       document.getElementById('frame-name').textContent = 'No frame selected';
       updatePreviewBtn(false);
       // Update Set buttons disabled state
@@ -1651,19 +2029,27 @@ window.onmessage = function(event) {
       showNoSelection();
       return;
     }
-    _currentNode = msg.node;
+    _currentNode       = msg.node;
+    _currentNodeType   = msg.node.type       || '';
+    _currentNodeLayout = msg.node.layoutMode || 'NONE';
     var name = msg.node.name || 'Unnamed';
     document.getElementById('frame-name').textContent = name;
     var cfg = msg.node.cfg || {};
     // Preview enabled only when selected frame is a Template
     updatePreviewBtn(cfg.frameType === 'template');
-    // Auto-lock responsive frame on FIRST selection only
-    if (_currentMode === 'responsive' && !_respFrameId) {
-      parent.postMessage({ pluginMessage: { type: 'set-resp-frame' } }, '*');
+    // Auto-lock responsive frame on FIRST selection of a Template frame only.
+    // Restricting to Template frames prevents accidentally locking an internal
+    // frame when the plugin opens with one selected (or the user navigates to
+    // one before clicking the root Template). Passing nodeId lets code.js look
+    // up the exact node via getNodeByIdAsync, eliminating the race condition
+    // where figma.currentPage.selection[0] has already changed by the time the
+    // message is processed.
+    if (_currentMode === 'responsive' && !_respFrameId && cfg.frameType === 'template') {
+      parent.postMessage({ pluginMessage: { type: 'set-resp-frame', nodeId: _currentNode.id } }, '*');
     }
-    // Auto-populate desktop breakpoint on the FIRST selection only
-    if (_currentMode === 'breakpoints' && !_bpDesktopId) {
-      parent.postMessage({ pluginMessage: { type: 'set-breakpoint-frame', role: 'desktop' } }, '*');
+    // Auto-populate desktop breakpoint on the FIRST selection of a Template frame only.
+    if (_currentMode === 'breakpoints' && !_bpDesktopId && cfg.frameType === 'template') {
+      parent.postMessage({ pluginMessage: { type: 'set-breakpoint-frame', role: 'desktop', nodeId: _currentNode.id } }, '*');
     }
     // Re-enable Set buttons now that we have a selection
     var setDBtn = document.getElementById('btn-set-desktop');
@@ -1675,6 +2061,27 @@ window.onmessage = function(event) {
     // Populate Properties panel
     showSection(cfg.frameType || '');
     populateForm(cfg);
+    updateMobileSection();
+    // If an edit action is pending, focus the target field once the panel has rendered
+    if (_pendingFocus) {
+      (function(fieldId) {
+        setTimeout(function() {
+          var el = document.getElementById(fieldId);
+          if (el) {
+            // Custom select wraps a hidden <select> — focus the visible trigger button instead
+            var focusTarget = el.classList && el.classList.contains('custom-select-wrap')
+              ? el.querySelector('.custom-select-trigger')
+              : el;
+            if (focusTarget) {
+              focusTarget.focus();
+              if (focusTarget.tagName === 'INPUT' || focusTarget.tagName === 'TEXTAREA') focusTarget.select();
+              focusTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }
+        }, 60);
+      })(_pendingFocus);
+      _pendingFocus = null;
+    }
     return;
   }
 
@@ -1689,6 +2096,11 @@ window.onmessage = function(event) {
   if (msg.type === 'resp-frame-set') {
     _respFrameId = msg.id;
     renderRespRow(msg.name);
+    // Auto-scan if the Issues tab is open and waiting for a template
+    if (_activeTab === 'issues') {
+      _issuesScanned = false;
+      triggerScan();
+    }
     return;
   }
 
@@ -1718,6 +2130,14 @@ window.onmessage = function(event) {
 
   if (msg.type === 'error') {
     showStatus(msg.message || 'An error occurred.', true);
+    return;
+  }
+
+  if (msg.type === 'issues-result') {
+    // Live updates (from documentchange) skip the scanning state flash
+    // so the list updates in place without flickering.
+    if (!msg.live) setIssuesState('scanning');
+    renderIssues(msg.issues || [], msg.error || null);
     return;
   }
 };
@@ -1970,7 +2390,8 @@ function buildFinalHtml() {
   if (customTitle) {
     html = html.replace(/<title>[^<]*<\/title>/, '<title>' + escHtml(customTitle) + '</title>');
   }
-  return minifyHtml(html);
+  var shouldMinify = document.getElementById('tog-minify').checked;
+  return shouldMinify ? minifyHtml(html) : html;
 }
 
 // ── Utilities ────────────────────────────────────────────────
@@ -1988,6 +2409,256 @@ function showStatus(msg, isErr) {
 function escHtml(s) {
   return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+// ════════════════════════════════════════════════════════════
+// Issues tab
+// ════════════════════════════════════════════════════════════
+var _activeTab       = 'properties';
+var _issuesScanned   = false; // true once a scan result has been received
+
+// ── Tab switching ────────────────────────────────────────────
+document.getElementById('tab-properties').addEventListener('click', function() { switchTab('properties'); });
+document.getElementById('tab-issues').addEventListener('click', function() { switchTab('issues'); });
+
+function switchTab(tab) {
+  _activeTab = tab;
+  document.getElementById('tab-properties').classList.toggle('active', tab === 'properties');
+  document.getElementById('tab-issues').classList.toggle('active', tab === 'issues');
+  document.getElementById('panel-properties').classList.toggle('active', tab === 'properties');
+  document.getElementById('panel-issues').classList.toggle('active', tab === 'issues');
+  // Tell code.js whether to run live scans on document changes
+  parent.postMessage({ pluginMessage: { type: 'issues-tab-active', active: tab === 'issues' } }, '*');
+  if (tab === 'issues') {
+    if (!_issuesScanned) {
+      triggerScan();
+    }
+  } else {
+    // Leaving Issues tab — reset so returning always picks up any changes made
+    _issuesScanned = false;
+  }
+}
+
+// ── Scan trigger ─────────────────────────────────────────────
+document.getElementById('btn-rescan').addEventListener('click', function() {
+  _issuesScanned = false;
+  triggerScan();
+});
+
+function triggerScan() {
+  setIssuesState('scanning');
+  parent.postMessage({ pluginMessage: { type: 'scan-issues' } }, '*');
+}
+
+// ── State rendering ──────────────────────────────────────────
+function setIssuesState(state) {
+  document.getElementById('issues-state-none').style.display     = state === 'none'     ? '' : 'none';
+  document.getElementById('issues-state-scanning').style.display = state === 'scanning' ? '' : 'none';
+  document.getElementById('issues-state-clear').style.display    = state === 'clear'    ? '' : 'none';
+  document.getElementById('issues-list').style.display           = state === 'list'     ? '' : 'none';
+  // Hide meta row (counts + rescan) when there is nothing to show yet
+  var metaEl = document.querySelector('.issues-meta');
+  if (metaEl) metaEl.style.display = state === 'none' ? 'none' : '';
+}
+
+// ── Render issues result ─────────────────────────────────────
+function renderIssues(issues, error) {
+  _issuesScanned = true;
+  var badge  = document.getElementById('issues-badge');
+  var counts = document.getElementById('issues-counts');
+
+  if (error) {
+    badge.style.display = 'none';
+    counts.textContent  = '—';
+    setIssuesState('none');
+    return;
+  }
+
+  var errors   = [];
+  var warnings = [];
+  var infos    = [];
+  for (var i = 0; i < issues.length; i++) {
+    if      (issues[i].severity === 'error')   errors.push(issues[i]);
+    else if (issues[i].severity === 'warning') warnings.push(issues[i]);
+    else                                        infos.push(issues[i]);
+  }
+
+  // Update badge
+  var actionable = errors.length + warnings.length;
+  if (actionable > 0) {
+    badge.textContent  = actionable;
+    badge.style.display = 'inline-flex';
+    badge.className    = 'tab-badge ' + (errors.length > 0 ? 'b-error' : 'b-warning');
+  } else if (infos.length > 0) {
+    badge.textContent  = infos.length;
+    badge.style.display = 'inline-flex';
+    badge.className    = 'tab-badge b-neutral';
+  } else {
+    badge.style.display = 'none';
+  }
+
+  // Update summary counts
+  var parts = [];
+  if (errors.length)   parts.push(errors.length   + ' error'   + (errors.length   !== 1 ? 's' : ''));
+  if (warnings.length) parts.push(warnings.length + ' warning' + (warnings.length !== 1 ? 's' : ''));
+  if (infos.length)    parts.push(infos.length    + ' info');
+  counts.textContent = parts.length ? parts.join(' · ') : 'All clear';
+
+  if (issues.length === 0) {
+    setIssuesState('clear');
+    return;
+  }
+
+  // Build accordion list
+  var list = document.getElementById('issues-list');
+  list.innerHTML = '';
+  _accordions = [];
+  buildGroup(list, errors,   'Errors',   true);   // open by default
+  buildGroup(list, warnings, 'Warnings', false);  // closed by default
+  buildGroup(list, infos,    'Info',     false);  // closed by default
+  setIssuesState('list');
+}
+
+var _accordions = [];
+
+function buildGroup(container, items, label, defaultOpen) {
+  if (!items.length) return;
+
+  var accordion = document.createElement('div');
+  accordion.className = 'issue-accordion' + (defaultOpen ? ' open' : '');
+
+  // Header button
+  var hdr = document.createElement('button');
+  hdr.type = 'button';
+  hdr.className = 'accordion-hdr';
+
+  var titleSpan = document.createElement('span');
+  titleSpan.textContent = label + ' (' + items.length + ')';
+
+  var chevron = document.createElement('span');
+  chevron.className = 'accordion-chevron mat-icon';
+  chevron.style.fontSize = '16px';
+  chevron.textContent = defaultOpen ? 'expand_less' : 'expand_more';
+
+  hdr.appendChild(titleSpan);
+  hdr.appendChild(chevron);
+
+  // Body
+  var body = document.createElement('div');
+  body.className = 'accordion-body';
+  if (!defaultOpen) body.style.display = 'none';
+
+  for (var i = 0; i < items.length; i++) {
+    body.appendChild(buildCard(items[i]));
+  }
+
+  // Toggle: open this, close all others
+  (function(acc, bd, chv) {
+    hdr.addEventListener('click', function() {
+      var isOpen = acc.classList.contains('open');
+      // Close all
+      for (var j = 0; j < _accordions.length; j++) {
+        _accordions[j].el.classList.remove('open');
+        _accordions[j].body.style.display = 'none';
+        _accordions[j].chevron.textContent = 'expand_more';
+      }
+      // Open this one if it was closed
+      if (!isOpen) {
+        acc.classList.add('open');
+        bd.style.display = '';
+        chv.textContent = 'expand_less';
+      }
+    });
+  })(accordion, body, chevron);
+
+  accordion.appendChild(hdr);
+  accordion.appendChild(body);
+  container.appendChild(accordion);
+  _accordions.push({ el: accordion, body: body, chevron: chevron });
+}
+
+var _pendingFocus = null;
+
+function buildCard(issue) {
+  var card = document.createElement('div');
+  card.className = 'issue-card';
+
+  // Severity dot
+  var dot = document.createElement('div');
+  dot.className = 'issue-dot s-' + issue.severity;
+  card.appendChild(dot);
+
+  // Body
+  var body = document.createElement('div');
+  body.className = 'issue-body';
+
+  var title = document.createElement('div');
+  title.className   = 'issue-title';
+  title.textContent = issue.title;
+  body.appendChild(title);
+
+  if (issue.nodeName) {
+    var nodeName = document.createElement('div');
+    nodeName.className   = 'issue-node';
+    nodeName.textContent = issue.nodeName;
+    body.appendChild(nodeName);
+  }
+
+  var desc = document.createElement('div');
+  desc.className   = 'issue-desc';
+  desc.textContent = issue.desc;
+  body.appendChild(desc);
+
+  card.appendChild(body);
+
+  // Action icons (shown on hover)
+  if (issue.nodeId) {
+    var actions = document.createElement('div');
+    actions.className = 'issue-actions';
+
+    // View — selects the node in Figma
+    var viewBtn = document.createElement('button');
+    viewBtn.className = 'btn-issue-action';
+    viewBtn.setAttribute('data-tooltip', 'View layer');
+    var viewIcon = document.createElement('span');
+    viewIcon.className = 'mat-icon';
+    viewIcon.style.fontSize = '16px';
+    viewIcon.textContent = 'target';
+    viewBtn.appendChild(viewIcon);
+    (function(nodeId) {
+      viewBtn.addEventListener('click', function() {
+        parent.postMessage({ pluginMessage: { type: 'select-node', nodeId: nodeId } }, '*');
+      });
+    })(issue.nodeId);
+    actions.appendChild(viewBtn);
+
+    // Edit — only when the issue maps to a Properties panel field
+    if (issue.fieldId) {
+      var editBtn = document.createElement('button');
+      editBtn.className = 'btn-issue-action';
+      editBtn.setAttribute('data-tooltip', 'Edit');
+      var editIcon = document.createElement('span');
+      editIcon.className = 'mat-icon';
+      editIcon.style.fontSize = '16px';
+      editIcon.textContent = 'edit';
+      editBtn.appendChild(editIcon);
+      (function(nodeId, fieldId) {
+        editBtn.addEventListener('click', function() {
+          _pendingFocus = fieldId;
+          parent.postMessage({ pluginMessage: { type: 'select-node', nodeId: nodeId } }, '*');
+          switchTab('properties');
+        });
+      })(issue.nodeId, issue.fieldId);
+      actions.appendChild(editBtn);
+    }
+
+    card.appendChild(actions);
+  }
+
+  return card;
+}
+
+// ── Handle issues-result message from code.js ────────────────
+// (wired into the existing window.onmessage handler below)
 </script>
 </body>
 </html>

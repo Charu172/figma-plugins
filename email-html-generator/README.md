@@ -2,7 +2,8 @@
 
 A Figma plugin that converts your email designs into email-client-compliant HTML,
 using a hashtag-based naming convention to encode HTML attributes directly into
-Figma layer names.
+Figma layer names. Includes a built-in Issues tab that scans your design for
+problems that would break rendering across major email clients.
 
 ---
 
@@ -10,9 +11,10 @@ Figma layer names.
 
 ```
 email-plugin/
-├── manifest.json   ← Figma plugin descriptor
-├── code.js         ← Main plugin thread (Figma API + HTML generator)
-├── ui.html         ← Plugin UI (Properties panel + Export + Guide)
+├── manifest.json          ← Figma plugin descriptor
+├── code.js                ← Main plugin thread (Figma API, HTML generator, issues scanner)
+├── ui.html                ← Plugin UI (Properties panel, Export mode, Issues tab)
+├── issues-checklist.md   ← Full reference for all issues checks and detection logic
 └── README.md
 ```
 
@@ -97,3 +99,16 @@ The generated HTML includes:
 - ✅ `-webkit-text-size-adjust` for iOS
 - ✅ Max-width container pattern (default 600px)
 - ✅ `display:block` on all images
+
+---
+
+## Issues Tab
+
+The Issues tab scans your design and flags anything that would break or degrade
+rendering across major email clients — missing image URLs, unsupported fills,
+non-web-safe fonts, layout problems, and more. Each issue has a View action to
+jump to the layer in Figma, and an Edit action (where applicable) to open the
+relevant Properties field directly. The list updates automatically as you make
+changes through the Properties panel.
+
+See `issues-checklist.md` for the full list of checks.
