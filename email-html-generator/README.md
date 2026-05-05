@@ -100,15 +100,5 @@ The generated HTML includes:
 - ✅ Max-width container pattern (default 600px)
 - ✅ `display:block` on all images
 
----
 
-## Issues Tab
 
-The Issues tab scans your design and flags anything that would break or degrade
-rendering across major email clients — missing image URLs, unsupported fills,
-non-web-safe fonts, layout problems, and more. Each issue has a View action to
-jump to the layer in Figma, and an Edit action (where applicable) to open the
-relevant Properties field directly. The list updates automatically as you make
-changes through the Properties panel.
-
-See `issues-checklist.md` for the full list of checks.
