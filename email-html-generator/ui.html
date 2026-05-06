@@ -807,9 +807,9 @@
     font-weight: 700;
     line-height: 1;
   }
-  .tab-badge.b-error   { background: var(--error-bg);     color: var(--error-text); }
-  .tab-badge.b-warning { background: var(--warning-bg);   color: var(--warning-text); }
-  .tab-badge.b-neutral { background: var(--graphite-100); color: var(--graphite-600); }
+  .tab-badge.b-critical { background: var(--error-bg);     color: var(--error-text); }
+  .tab-badge.b-major    { background: var(--warning-bg);   color: var(--warning-text); }
+  .tab-badge.b-neutral  { background: var(--graphite-100); color: var(--graphite-600); }
 
   /* ── Issues panel layout ─────────────────────────────── */
   #panel-issues { padding: 0; }
@@ -927,9 +927,9 @@
     flex-shrink: 0;
     margin-top: 4px;
   }
-  .issue-dot.s-error   { background: var(--error); }
-  .issue-dot.s-warning { background: var(--warning); }
-  .issue-dot.s-info    { background: var(--info); }
+  .issue-dot.s-critical { background: var(--error); }
+  .issue-dot.s-major    { background: var(--warning); }
+  .issue-dot.s-minor    { background: var(--info); }
   .issue-body { flex: 1; min-width: 0; }
   .issue-title {
     font-size: 12px;
@@ -1253,7 +1253,7 @@
             </div>
             <select id="sel-frame-type" style="display:none;">
               <option value="template">Template</option>
-              <option value="">Frame</option>
+              <option value="">Section</option>
               <option value="image">Image</option>
               <option value="button">Button</option>
             </select>
@@ -1262,7 +1262,7 @@
 
         <div class="field-row">
           <label class="field-label" for="inp-href">
-            Action URL
+            Hyperlink
             <span class="tooltip-wrap">
               <span class="tooltip-icon">i</span>
               <span class="tooltip-text">URL of the destination the user lands on after clicking this frame.</span>
@@ -1326,7 +1326,7 @@
             </div>
             <select id="sel-img-frame-type" style="display:none;">
               <option value="template">Template</option>
-              <option value="">Frame</option>
+              <option value="">Section</option>
               <option value="image">Image</option>
               <option value="button">Button</option>
             </select>
@@ -1361,7 +1361,7 @@
 
         <div class="field-row">
           <label class="field-label" for="inp-img-href">
-            Action URL
+            Hyperlink
             <span class="tooltip-wrap">
               <span class="tooltip-icon">i</span>
               <span class="tooltip-text">URL of the destination the user lands on after clicking this image.</span>
@@ -1425,7 +1425,7 @@
             </div>
             <select id="sel-btn-frame-type" style="display:none;">
               <option value="template">Template</option>
-              <option value="">Frame</option>
+              <option value="">Section</option>
               <option value="image">Image</option>
               <option value="button">Button</option>
             </select>
@@ -1482,7 +1482,7 @@
             </div>
             <select id="sel-tmpl-frame-type" style="display:none;">
               <option value="template">Template</option>
-              <option value="">Frame</option>
+              <option value="">Section</option>
               <option value="image">Image</option>
               <option value="button">Button</option>
             </select>
@@ -1806,7 +1806,7 @@ function showNoSelection() {
 // ── Custom frame-type dropdowns ───────────────────────────────
 var FRAME_TYPE_OPTIONS = [
   { value: 'template', title: 'Template', desc: 'The outermost email container. Sets the global width, background color, and wraps all content inside.' },
-  { value: '',         title: 'Frame',    desc: 'A structural container for grouping and laying out content blocks within the email.' },
+  { value: '',         title: 'Section',  desc: 'A structural container for grouping and laying out content blocks within the email.' },
   { value: 'image',    title: 'Image',    desc: 'A static image block that renders an image or GIF from a source URL.' },
   { value: 'button',   title: 'Button',   desc: 'A CTA block that generates email-compatible HTML for all major clients.' }
 ];
@@ -2473,23 +2473,23 @@ function renderIssues(issues, error) {
     return;
   }
 
-  var errors   = [];
-  var warnings = [];
-  var infos    = [];
+  var criticals = [];
+  var majors    = [];
+  var minors    = [];
   for (var i = 0; i < issues.length; i++) {
-    if      (issues[i].severity === 'error')   errors.push(issues[i]);
-    else if (issues[i].severity === 'warning') warnings.push(issues[i]);
-    else                                        infos.push(issues[i]);
+    if      (issues[i].severity === 'critical') criticals.push(issues[i]);
+    else if (issues[i].severity === 'major')    majors.push(issues[i]);
+    else                                         minors.push(issues[i]);
   }
 
   // Update badge
-  var actionable = errors.length + warnings.length;
+  var actionable = criticals.length + majors.length;
   if (actionable > 0) {
     badge.textContent  = actionable;
     badge.style.display = 'inline-flex';
-    badge.className    = 'tab-badge ' + (errors.length > 0 ? 'b-error' : 'b-warning');
-  } else if (infos.length > 0) {
-    badge.textContent  = infos.length;
+    badge.className    = 'tab-badge ' + (criticals.length > 0 ? 'b-critical' : 'b-major');
+  } else if (minors.length > 0) {
+    badge.textContent  = minors.length;
     badge.style.display = 'inline-flex';
     badge.className    = 'tab-badge b-neutral';
   } else {
@@ -2498,9 +2498,9 @@ function renderIssues(issues, error) {
 
   // Update summary counts
   var parts = [];
-  if (errors.length)   parts.push(errors.length   + ' error'   + (errors.length   !== 1 ? 's' : ''));
-  if (warnings.length) parts.push(warnings.length + ' warning' + (warnings.length !== 1 ? 's' : ''));
-  if (infos.length)    parts.push(infos.length    + ' info');
+  if (criticals.length) parts.push(criticals.length + ' critical');
+  if (majors.length)    parts.push(majors.length    + ' major');
+  if (minors.length)    parts.push(minors.length    + ' minor');
   counts.textContent = parts.length ? parts.join(' · ') : 'All clear';
 
   if (issues.length === 0) {
@@ -2512,9 +2512,9 @@ function renderIssues(issues, error) {
   var list = document.getElementById('issues-list');
   list.innerHTML = '';
   _accordions = [];
-  buildGroup(list, errors,   'Errors',   true);   // open by default
-  buildGroup(list, warnings, 'Warnings', false);  // closed by default
-  buildGroup(list, infos,    'Info',     false);  // closed by default
+  buildGroup(list, criticals, 'Critical', true);   // open by default
+  buildGroup(list, majors,    'Major',    false);  // closed by default
+  buildGroup(list, minors,    'Minor',    false);  // closed by default
   setIssuesState('list');
 }
 

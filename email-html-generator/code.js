@@ -493,6 +493,10 @@ function buildSegmentedText(node, baseColor, baseFontSize) {
       var sStyle  = (seg.fontName.style || '').toLowerCase();
       var sBold   = sStyle.indexOf('bold')   !== -1;
       var sItalic = sStyle.indexOf('italic') !== -1;
+      // Always set font-family explicitly on the span — Outlook and some email
+      // clients do not inherit font-family from the parent <p> onto child <span>
+      // elements, causing styled spans to fall back to the default serif font.
+      spanSt.push("font-family:'" + escapeHtml(seg.fontName.family) + "',Arial,sans-serif");
       if (sBold)   spanSt.push('font-weight:bold');
       if (sItalic) spanSt.push('font-style:italic');
     }
@@ -2291,15 +2295,15 @@ function scanForIssues(templateNode) {
   // ── Template-level checks ─────────────────────────────────
   var tw = Math.round(templateNode.width);
   if (tw > 600) {
-    push('warning', 'tmpl-wide',
-      'Template is wider than 600px (' + tw + 'px)',
-      'Standard email width is 600px. Wider templates will cause horizontal scroll in most clients.',
+    push('minor', 'tmpl-wide',
+      'Template width exceeds 600px',
+      'Most email clients cap content at 600px. Templates wider than this may cause horizontal scrolling.',
       templateNode);
   }
   if (tw < 320) {
-    push('warning', 'tmpl-narrow',
-      'Template is narrower than 320px (' + tw + 'px)',
-      'Narrower than the smallest common phone viewport. The email will appear shrunk or over-padded on mobile.',
+    push('minor', 'tmpl-narrow',
+      'Template width is below 320px',
+      '320px is the smallest common mobile viewport. Templates narrower than this may appear clipped or compressed on phones.',
       templateNode);
   }
 
@@ -2314,9 +2318,9 @@ function scanForIssues(templateNode) {
       var _hrefField = cfg.frameType === 'button' ? 'inp-btn-link'
                      : cfg.frameType === 'image'  ? 'inp-img-href'
                      : 'inp-href';
-      push('warning', 'bad-href',
-        'Incorrect link address',
-        'Links without https:// may not work in some email clients.',
+      push('major', 'bad-href',
+        'Hyperlink uses a relative URL',
+        'URLs without https:// may not resolve correctly in some email clients.',
         node, _hrefField);
     }
 
@@ -2324,20 +2328,20 @@ function scanForIssues(templateNode) {
     // run only image-level checks and do not recurse into its children.
     if (cfg.frameType === 'image' || cfg.exportImg) {
       if (!cfg.src) {
-        push('error', 'img-no-src',
+        push('critical', 'img-no-src',
           'Image has no source URL',
-          'No #src(...) set. Will render as a broken image in every client.',
+          'The src attribute on this image is empty. Without a source URL, the image won\'t load.',
           node, 'inp-src');
       } else if (cfg.src.indexOf('http') !== 0) {
-        push('error', 'img-relative-url',
-          'Image URL is not absolute',
-          'The URL must start with https://. Relative URLs have no base domain in email and will not load.',
+        push('major', 'img-relative-url',
+          'Image source URL uses a relative URL',
+          'URLs without https:// may not resolve correctly in some email clients.',
           node, 'inp-src');
       }
       if (!cfg.alt) {
-        push('warning', 'img-no-alt',
+        push('minor', 'img-no-alt',
           'Image is missing alt text',
-          'Add #alt(...) so recipients see descriptive text when images are blocked or fail to load.',
+          'Set alt text in the plugin so readers see a description if images are blocked or fail to load.',
           node, 'inp-alt');
       }
       return; // do not inspect children of an image frame
@@ -2351,9 +2355,9 @@ function scanForIssues(templateNode) {
         if (node.children[vi].visible !== false) visCount++;
       }
       if (visCount > 1) {
-        push('error', 'no-autolayout',
-          'Auto-layout is off — child positions will be lost',
-          'Without auto-layout, child positions are lost. The renderer will stack children vertically in order, ignoring all overlaps and offsets.',
+        push('critical', 'no-autolayout',
+          'Frame has no auto-layout',
+          'The plugin will stack its children vertically in layer order, ignoring any positions, overlaps, or offsets.',
           node);
       }
     }
@@ -2374,9 +2378,9 @@ function scanForIssues(templateNode) {
       }
       var gapSum = fixedCnt > 1 ? spacing * (fixedCnt - 1) : 0;
       if (innerW > 0 && (fixedSum + gapSum) > innerW + 1) {
-        push('warning', 'hz-overflow',
-          'Column widths exceed frame width by ' + ((fixedSum + gapSum) - innerW) + 'px',
-          'Children (' + fixedSum + 'px) + gaps (' + gapSum + 'px) = ' + (fixedSum + gapSum) + 'px, exceeds available ' + innerW + 'px. Content will overflow the container.',
+        push('major', 'hz-overflow',
+          'Content overflows the frame by ' + ((fixedSum + gapSum) - innerW) + 'px',
+          'Children (' + fixedSum + 'px) and gaps (' + gapSum + 'px) add up to ' + (fixedSum + gapSum) + 'px, but the frame\'s inner width is ' + innerW + 'px. Content will overflow.',
           node);
       }
     }
@@ -2393,26 +2397,26 @@ function scanForIssues(templateNode) {
         }
       }
       if (_hasImgFill && !cfg.src) {
-        push('error', 'img-fill-needs-tag',
-          'Layer with image fill not set as image type',
-          'This layer contains an image fill. Set the frame type to Image so the plugin renders it correctly.',
+        push('critical', 'img-fill-needs-tag',
+          'Image fill detected but frame type is not set to Image',
+          'Change the frame type to Image so the plugin can export this layer correctly.',
           node, 'custom-sel-frame');
       } else {
         if (!cfg.src) {
-          push('error', 'img-no-src',
+          push('critical', 'img-no-src',
             'Image has no source URL',
-            'No #src(...) set. Will render as a broken image in every client.',
+            'The src attribute on this image is empty. Without a source URL, the image won\'t load.',
             node);
         } else if (cfg.src.indexOf('http') !== 0) {
-          push('error', 'img-relative-url',
-            'Image URL is not absolute',
-            'The URL must start with https://. Relative URLs have no base domain in email and will not load.',
+          push('major', 'img-relative-url',
+            'Image source URL uses a relative URL',
+            'URLs without https:// may not resolve correctly in some email clients.',
             node);
         }
         if (!cfg.alt) {
-          push('warning', 'img-no-alt',
+          push('minor', 'img-no-alt',
             'Image is missing alt text',
-            'Add #alt(...) so recipients see descriptive text when images are blocked or fail to load.',
+            'Set alt text in the plugin so readers see a description if images are blocked or fail to load.',
             node);
         }
       }
@@ -2425,26 +2429,26 @@ function scanForIssues(templateNode) {
       if (t === _skipTypes[si]) { _isSkip = true; break; }
     }
     if (_isSkip && !cfg.src && !cfg.exportImg) {
-      push('warning', 'vector-skipped',
-        t.charAt(0) + t.slice(1).toLowerCase() + ' node will be invisible in the output',
-        'This node will be invisible in the output. Add #src(...) or #exportimg to include it as an image.',
+      push('major', 'vector-skipped',
+        (t.charAt(0) + t.slice(1).toLowerCase()).replace('_', ' ') + ' is not supported in email',
+        'This shape type has no HTML equivalent. You can export this layer as an image instead.',
         node);
     }
 
     // 3, 19 — Button checks
     if (cfg.frameType === 'button') {
       if (!cfg.href) {
-        push('error', 'btn-no-href',
-          'Button has no action URL',
-          'No #href(...) set. The button will be non-functional in the email.',
+        push('critical', 'btn-no-href',
+          'Button has no link',
+          'No destination URL is set on this button. It will appear in the email but won\'t be clickable.',
           node, 'inp-btn-link');
       }
       var btnText = null;
       if (node.findOne) btnText = node.findOne(function(n) { return n.type === 'TEXT' && n.visible !== false; });
       if (!btnText) {
-        push('warning', 'btn-no-text',
-          'Button has no visible text child',
-          'No text found inside the button. The label will default to "Click here" in the output.',
+        push('major', 'btn-no-text',
+          'Button has no visible text',
+          'No text layer found inside this button. The email will default to \'Click here\' as the button label.',
           node);
       }
     }
@@ -2455,16 +2459,16 @@ function scanForIssues(templateNode) {
       var family = (node.fontName && node.fontName !== figma.mixed) ? node.fontName.family : null;
       if (family && !_isSafeFont(family) && !_seenFonts[family]) {
         _seenFonts[family] = true;
-        push('warning', 'unsafe-font-' + family,
+        push('major', 'unsafe-font-' + family,
           'Non-web-safe font: ' + family,
-          'May not render in some email clients and will fall back to a system font, changing the look of your design.',
+          'This font may not render in all email clients and fall back to a system font.',
           node);
       }
       // 15 — Text node opacity
       if (typeof node.opacity === 'number' && node.opacity < 1) {
-        push('warning', 'text-opacity',
-          'Text node opacity is ' + Math.round(node.opacity * 100) + '%',
-          'Opacity on text is ignored in some email clients. The text will appear fully opaque.',
+        push('minor', 'text-opacity',
+          'Text layer has opacity set to ' + Math.round(node.opacity * 100) + '%',
+          'Opacity on text isn\'t supported in most email clients. This text will appear fully opaque.',
           node);
       }
       return; // no children on TEXT
@@ -2473,9 +2477,9 @@ function scanForIssues(templateNode) {
     // 15 — Frame opacity
     if ((t === 'FRAME' || t === 'COMPONENT' || t === 'INSTANCE') &&
         typeof node.opacity === 'number' && node.opacity < 1) {
-      push('warning', 'frame-opacity',
-        'Frame opacity is ' + Math.round(node.opacity * 100) + '%',
-        'Frame opacity is not applied by the renderer. This frame will appear fully opaque in the email.',
+      push('minor', 'frame-opacity',
+        'Section has opacity set to ' + Math.round(node.opacity * 100) + '%',
+        'Opacity on sections isn\'t applied in email. This section will appear fully opaque.',
         node);
     }
 
@@ -2496,15 +2500,15 @@ function scanForIssues(templateNode) {
           // IMAGE fills are handled by isImgNode() — not a gradient, skip
         }
         if (hasGradient && !hasSolid) {
-          push('warning', 'gradient-fill',
-            'Gradient fill will not render',
-            'Gradient fills are not supported. This background will be transparent in the email.',
+          push('major', 'gradient-fill',
+            'Gradient fill is not supported',
+            'Gradient fills aren\'t rendered in email HTML. This layer\'s background will appear transparent.',
             node);
         }
         if (visibleFills.length > 1) {
-          push('warning', 'multi-fill',
-            visibleFills.length + ' fills — only the top fill is rendered',
-            'Only the top fill is used. Additional fills will be dropped in the output.',
+          push('minor', 'multi-fill',
+            'Multiple fill values detected',
+            'Email only supports a single fill per layer. Only the topmost fill will render and the rest will be dropped.',
             node);
         }
       }
@@ -2524,18 +2528,18 @@ function scanForIssues(templateNode) {
         if (!already) foundEffects.push(lbl);
       }
       if (foundEffects.length > 0) {
-        push('warning', 'effects',
-          'Effect not supported in email: ' + foundEffects.join(', '),
-          'Effects are not supported in email and will be invisible in the output.',
+        push('major', 'effects',
+          'Figma effect not supported: ' + foundEffects.join(', '),
+          'Figma effects aren\'t rendered in email HTML. This effect will not be visible in the email.',
           node);
       }
     }
 
     // 22 — GROUP nodes
     if (t === 'GROUP') {
-      push('info', 'group-node',
-        'Group node — layout context may be lost',
-        'Children inside a group are flattened into a list. Absolute offsets and z-ordering may not translate correctly.',
+      push('major', 'group-node',
+        'Group node detected',
+        'Groups don\'t have auto-layout. Convert this to a frame with auto-layout so positions and layering show correctly in email.',
         node);
     }
 
