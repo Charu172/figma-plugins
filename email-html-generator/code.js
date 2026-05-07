@@ -56,9 +56,12 @@ function parseNodeConfig(node) {
     src:             getTag(n, 'src'),
     className:       getTag(n, 'class'),
     id:              getTag(n, 'id'),
-    // preheader and head stored in pluginData (may contain parens that break tag regex)
+    // preheader and custom injection points stored in pluginData (may contain parens that break tag regex)
     preheader:       gpd('preheader') || getTag(n, 'preheader') || '',
-    head:            gpd('head')     || getTag(n, 'head')     || '',
+    headStart:       gpd('headStart') || '',
+    headEnd:         gpd('headEnd')   || '',
+    bodyStart:       gpd('bodyStart') || '',
+    bodyEnd:         gpd('bodyEnd')   || '',
     exportImg:       hasTag(n, 'exportimg'),
     fullWidthMobile: hasTag(n, 'fullwidth'),
     // New fields
@@ -73,6 +76,15 @@ function parseNodeConfig(node) {
     utmCampaign:     gpd('utmCampaign'),
     utmContent:      gpd('utmContent'),
     utmTerm:         gpd('utmTerm'),
+    // Mobile overrides
+    mobileStack:      gpd('mobileStack')      || '',  // 'vertical'
+    mobileAlign:      gpd('mobileAlign')      || '',  // 'left' | 'center' | 'right'
+    mobilePadTop:     gpd('mobilePadTop')     || '',
+    mobilePadRight:   gpd('mobilePadRight')   || '',
+    mobilePadBottom:  gpd('mobilePadBottom')  || '',
+    mobilePadLeft:    gpd('mobilePadLeft')    || '',
+    mobileFontSize:   gpd('mobileFontSize')   || '',
+    mobileLineHeight: gpd('mobileLineHeight') || '',
   };
 }
 
@@ -481,6 +493,10 @@ function buildSegmentedText(node, baseColor, baseFontSize) {
       var sStyle  = (seg.fontName.style || '').toLowerCase();
       var sBold   = sStyle.indexOf('bold')   !== -1;
       var sItalic = sStyle.indexOf('italic') !== -1;
+      // Always set font-family explicitly on the span — Outlook and some email
+      // clients do not inherit font-family from the parent <p> onto child <span>
+      // elements, causing styled spans to fall back to the default serif font.
+      spanSt.push("font-family:'" + escapeHtml(seg.fontName.family) + "',Arial,sans-serif");
       if (sBold)   spanSt.push('font-weight:bold');
       if (sItalic) spanSt.push('font-style:italic');
     }
@@ -603,7 +619,18 @@ function renderText(node, cfg, d) {
   // from short hug-text labels (dates, counters, etc.).
   // Wide hug text in mobile mode omits the class so @media can reset white-space.
   var isHugP = isHugText && mobileNowrap;
-  var html = '<p' + (isHugP ? ' class="nowrap-lbl"' : '') + ' style="' + st.join(';') + '">' + rawText + '</p>';
+  // Build <p> class list — nowrap-lbl first (existing), then mobile override class if needed.
+  var pClasses = [];
+  if (isHugP) pClasses.push('nowrap-lbl');
+  if (cfg.mobileFontSize || cfg.mobileLineHeight) {
+    var mc = mobClass(node.id);
+    var mProps = [];
+    if (cfg.mobileFontSize)   mProps.push('font-size:'   + parseInt(cfg.mobileFontSize,   10) + 'px !important');
+    if (cfg.mobileLineHeight) mProps.push('line-height:' + parseInt(cfg.mobileLineHeight, 10) + 'px !important; mso-line-height-rule:exactly !important');
+    _mobileCssRules.push('    .' + mc + ' { ' + mProps.join('; ') + '; }');
+    pClasses.push(mc);
+  }
+  var html = '<p' + (pClasses.length ? ' class="' + pClasses.join(' ') + '"' : '') + ' style="' + st.join(';') + '">' + rawText + '</p>';
   if (cfg.href) {
     html = '<a href="' + escapeHtml(cfg.href) + '" target="_blank" style="color:inherit;text-decoration:none;">' + html + '</a>';
   }
@@ -1319,6 +1346,8 @@ function _innerRenderNode(node, cfg, d, insideRounded, parentCellAlign) {
       var tdClasses = [];
       if (kidIsFillCol && !omitTdW && !allFillPctMode) tdClasses.push('fill-col');
       if (kidIsHugTxt) tdClasses.push('nowrap-lbl');
+      // Mobile stack-vertical: each content cell stacks as a block on mobile.
+      if (cfg.mobileStack === 'vertical') tdClasses.push('stack-column');
       var fillColClass = tdClasses.length > 0 ? ' class="' + tdClasses.join(' ') + '"' : '';
 
       // Pass kidHAlign as parentCellAlign so the child's inner table wrapper
@@ -1335,7 +1364,9 @@ function _innerRenderNode(node, cfg, d, insideRounded, parentCellAlign) {
       if (ci < kids.length - 1) {
         var gapW = isSpaceBetween ? autoGapW : g;
         if (gapW > 0) {
-          cells += ind(d+2) + '<td width="' + gapW + '" style="width:' + gapW + 'px;font-size:0;line-height:0;">&nbsp;</td>\n';
+          // Gap cell also gets stack-column so it becomes a vertical spacer when stacking.
+          var gapCls = cfg.mobileStack === 'vertical' ? ' class="stack-column"' : '';
+          cells += ind(d+2) + '<td' + gapCls + ' width="' + gapW + '" style="width:' + gapW + 'px;font-size:0;line-height:0;">&nbsp;</td>\n';
         }
       }
     }
@@ -1408,6 +1439,23 @@ function _innerRenderNode(node, cfg, d, insideRounded, parentCellAlign) {
     var isPackedContentTbl = false;
     var tblClassAttr = '';
 
+    // ── Mobile overrides: alignment + padding ─────────────────
+    var hzMobCls = '';  // class added to outer wrapper <td> for mobile pad
+    if (cfg.mobileAlign) {
+      var hzAlignCls = mobClass(node.id) + '-al';
+      _mobileCssRules.push('    .' + hzAlignCls + ',\n    .' + hzAlignCls + ' td { text-align: ' + cfg.mobileAlign + ' !important; }');
+      tblClassAttr = ' class="' + hzAlignCls + '"';
+    }
+    var hasMobPad = cfg.mobilePadTop !== '' || cfg.mobilePadRight !== '' || cfg.mobilePadBottom !== '' || cfg.mobilePadLeft !== '';
+    if (hasMobPad) {
+      hzMobCls = mobClass(node.id) + '-pd';
+      var mpt = cfg.mobilePadTop    !== '' ? parseInt(cfg.mobilePadTop,    10) : pad.t;
+      var mpr = cfg.mobilePadRight  !== '' ? parseInt(cfg.mobilePadRight,  10) : pad.r;
+      var mpb = cfg.mobilePadBottom !== '' ? parseInt(cfg.mobilePadBottom, 10) : pad.b;
+      var mpl = cfg.mobilePadLeft   !== '' ? parseInt(cfg.mobilePadLeft,   10) : pad.l;
+      _mobileCssRules.push('    .' + hzMobCls + ' { padding: ' + mpt + 'px ' + mpr + 'px ' + mpb + 'px ' + mpl + 'px !important; }');
+    }
+
     var tblW       = useFixedW ? nodeW : null;
     var outerWAttr = tblW ? ' width="' + tblW + '" align="' + hzOuterAlign + '"' : ' width="100%"';
     var outerWSty  = tblW ? 'width:' + tblW + 'px;max-width:' + tblW + 'px;' + hzMargin : 'width:100%';
@@ -1441,9 +1489,10 @@ function _innerRenderNode(node, cfg, d, insideRounded, parentCellAlign) {
           ind(d) + '</table>'
         : innerTbl;
       tbl = borderWrapper(stroke, radPadContent, d, useFixedW ? nodeW : 0, rad);
-    } else if (outerTdStyle) {
+    } else if (outerTdStyle || hzMobCls) {
+      var hzOuterTdClass = hzMobCls ? ' class="' + hzMobCls + '"' : '';
       tbl = ind(d) + '<table cellpadding="0" cellspacing="0" border="0" role="presentation"' + outerWAttr + ' style="' + outerWSty + '">\n' +
-        ind(d+1) + '<tr><td' + (bg ? ' bgcolor="' + bg + '"' : '') + ' style="' + outerTdStyle + '">\n' +
+        ind(d+1) + '<tr><td' + hzOuterTdClass + (bg ? ' bgcolor="' + bg + '"' : '') + (outerTdStyle ? ' style="' + outerTdStyle + '"' : '') + '>\n' +
         innerTbl + '\n' +
         ind(d+1) + '</td></tr>\n' +
         ind(d) + '</table>';
@@ -1498,6 +1547,24 @@ function _innerRenderNode(node, cfg, d, insideRounded, parentCellAlign) {
     }
   }
 
+  // ── Vertical frame mobile overrides: alignment + padding ──
+  var vtMobCls = '';
+  if (cfg.mobileAlign) {
+    var vtAlignCls = mobClass(node.id) + '-al';
+    _mobileCssRules.push('    .' + vtAlignCls + ',\n    .' + vtAlignCls + ' td { text-align: ' + cfg.mobileAlign + ' !important; }');
+    vtMobCls = vtAlignCls;
+  }
+  var vtHasMobPad = cfg.mobilePadTop !== '' || cfg.mobilePadRight !== '' || cfg.mobilePadBottom !== '' || cfg.mobilePadLeft !== '';
+  if (vtHasMobPad) {
+    var vtPadCls = mobClass(node.id) + '-pd';
+    var vmpt = cfg.mobilePadTop    !== '' ? parseInt(cfg.mobilePadTop,    10) : pad.t;
+    var vmpr = cfg.mobilePadRight  !== '' ? parseInt(cfg.mobilePadRight,  10) : pad.r;
+    var vmpb = cfg.mobilePadBottom !== '' ? parseInt(cfg.mobilePadBottom, 10) : pad.b;
+    var vmpl = cfg.mobilePadLeft   !== '' ? parseInt(cfg.mobilePadLeft,   10) : pad.l;
+    _mobileCssRules.push('    .' + vtPadCls + ' { padding: ' + vmpt + 'px ' + vmpr + 'px ' + vmpb + 'px ' + vmpl + 'px !important; }');
+    vtMobCls = vtMobCls ? vtMobCls + ' ' + vtPadCls : vtPadCls;
+  }
+
   var tblW2     = useFixedW ? nodeW : null;
   // When parentCellAlign is set (e.g. left in a space-between cell), use it
   // for the outer table's align attribute and margin so content doesn't re-center.
@@ -1541,9 +1608,10 @@ function _innerRenderNode(node, cfg, d, insideRounded, parentCellAlign) {
     block = borderWrapper(stroke, radPadContent2, d, useFixedW ? nodeW : 0, rad);
   } else {
     var outerTdStyle2 = bgStr + padStr;
+    var vtOuterTdClass = vtMobCls ? ' class="' + vtMobCls + '"' : '';
     block = ind(d) + '<table cellpadding="0" cellspacing="0" border="0" role="presentation"' + tblWAttr2 + ' style="' + tblWSty2 + '">\n' +
       ind(d+1) + '<tr>\n' +
-      ind(d+2) + '<td align="' + childAlign + '"' +
+      ind(d+2) + '<td' + vtOuterTdClass + ' align="' + childAlign + '"' +
       (bg ? ' bgcolor="' + bg + '"' : '') +
       (outerTdStyle2 ? ' style="' + outerTdStyle2 + '"' : '') + '>\n' +
       innerTable + '\n' +
@@ -1661,8 +1729,12 @@ function appendUtmToHtml(html, utmString) {
 // generateEmailHtml — builds complete HTML document
 // ══════════════════════════════════════════════════════════════
 function generateEmailHtml(tmpl, config) {
+  _mobileCssRules = []; // reset per-generation mobile rules
   var preheader   = config.preheader   || '';
-  var headCode    = config.headCode    || '';
+  var headStart   = config.headStart   || '';
+  var headEnd     = config.headEnd     || '';
+  var bodyStart   = config.bodyStart   || '';
+  var bodyEnd     = config.bodyEnd     || '';
   var emailTitle  = config.emailTitle  || tmpl.name;
   var emailWidth  = safeNum(config.emailWidth, Math.round(tmpl.width) || 600);
   var utmSource   = config.utmSource   || '';
@@ -1703,6 +1775,7 @@ function generateEmailHtml(tmpl, config) {
   var _html = '<!DOCTYPE html>\n' +
 '<html lang="en" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">\n' +
 '<head>\n' +
+(headStart ? headStart + '\n' : '') +
 '<meta charset="UTF-8">\n' +
 '<meta http-equiv="X-UA-Compatible" content="IE=edge">\n' +
 '<meta name="viewport" content="width=device-width,initial-scale=1.0">\n' +
@@ -1846,9 +1919,10 @@ utmMetaTags +
 '    }\n' +
 '  }\n' +
 '</style>\n' +
-(headCode ? headCode + '\n' : '') +
+(headEnd ? headEnd + '\n' : '') +
 '</head>\n' +
 '<body id="body" bgcolor="' + bodyBg + '" style="margin:0;padding:0;background-color:' + bodyBg + ';">\n' +
+(bodyStart ? bodyStart + '\n' : '') +
 preheaderHtml +
 '<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"\n' +
 '       bgcolor="' + bodyBg + '" style="background-color:' + bodyBg + ';">\n' +
@@ -1869,8 +1943,15 @@ rows +
 ind(2) + '</td>\n' +
 ind(1) + '</tr>\n' +
 '</table>\n' +
+(bodyEnd ? bodyEnd + '\n' : '') +
 '</body>\n' +
 '</html>';
+  // Inject per-node mobile override rules collected during rendering.
+  if (_mobileCssRules.length > 0) {
+    var _mobStyle = '<style type="text/css">\n@media only screen and (max-width: ' + (emailWidth - 1) + 'px) {\n' +
+      _mobileCssRules.join('\n') + '\n}\n</style>\n';
+    _html = _html.replace('</head>', _mobStyle + '</head>');
+  }
   var _utmStr = buildUtmString(utmSource, utmMedium, utmCampaign, utmContent, utmTerm);
   return appendUtmToHtml(_html, _utmStr);
 }
@@ -1882,8 +1963,12 @@ ind(1) + '</tr>\n' +
 // Outlook (no media-query support) always sees the desktop version.
 // ══════════════════════════════════════════════════════════════
 function generateBreakpointEmailHtml(desktopNode, mobileNode, config) {
+  _mobileCssRules = []; // reset per-generation mobile rules
   var preheader    = config.preheader   || '';
-  var headCode     = config.headCode    || '';
+  var headStart    = config.headStart   || '';
+  var headEnd      = config.headEnd     || '';
+  var bodyStart    = config.bodyStart   || '';
+  var bodyEnd      = config.bodyEnd     || '';
   var emailTitle   = config.emailTitle  || desktopNode.name;
   var utmSource    = config.utmSource   || '';
   var utmMedium    = config.utmMedium   || '';
@@ -2011,6 +2096,7 @@ function generateBreakpointEmailHtml(desktopNode, mobileNode, config) {
   var _bpHtml = '<!DOCTYPE html>\n' +
 '<html lang="en" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">\n' +
 '<head>\n' +
+(headStart ? headStart + '\n' : '') +
 '<meta charset="UTF-8">\n' +
 '<meta http-equiv="X-UA-Compatible" content="IE=edge">\n' +
 '<meta name="viewport" content="width=device-width,initial-scale=1.0">\n' +
@@ -2131,9 +2217,10 @@ bpUtmMetaTags +
 '    }\n' +
 '  }\n' +
 '</style>\n' +
-(headCode ? headCode + '\n' : '') +
+(headEnd ? headEnd + '\n' : '') +
 '</head>\n' +
 '<body id="body" bgcolor="' + bodyBg + '" style="margin:0;padding:0;background-color:' + bodyBg + ';">\n' +
+(bodyStart ? bodyStart + '\n' : '') +
 preheaderHtml +
 '<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"\n' +
 '       bgcolor="' + bodyBg + '" style="background-color:' + bodyBg + ';">\n' +
@@ -2157,10 +2244,315 @@ ind(2) + '<!--<![endif]-->\n' +
 ind(2) + '</td>\n' +
 ind(1) + '</tr>\n' +
 '</table>\n' +
+(bodyEnd ? bodyEnd + '\n' : '') +
 '</body>\n' +
 '</html>';
+  // Inject per-node mobile override rules collected during rendering.
+  if (_mobileCssRules.length > 0) {
+    var _bpMobStyle = '<style type="text/css">\n@media only screen and (max-width: ' + (desktopWidth - 1) + 'px) {\n' +
+      _mobileCssRules.join('\n') + '\n}\n</style>\n';
+    _bpHtml = _bpHtml.replace('</head>', _bpMobStyle + '</head>');
+  }
   var _bpUtmStr = buildUtmString(utmSource, utmMedium, utmCampaign, utmContent, utmTerm);
   return appendUtmToHtml(_bpHtml, _bpUtmStr);
+}
+
+// ══════════════════════════════════════════════════════════════
+// Issues scanner
+// ══════════════════════════════════════════════════════════════
+
+var _SAFE_FONTS = [
+  'Arial', 'Helvetica', 'Georgia', 'Times New Roman', 'Verdana',
+  'Trebuchet MS', 'Courier New', 'Tahoma', 'Courier', 'Palatino',
+  'Garamond', 'Bookman', 'Arial Black', 'Impact',
+  'Lucida Console', 'Lucida Sans Unicode', 'Comic Sans MS',
+];
+
+function _isSafeFont(family) {
+  var f = (family || '').toLowerCase();
+  for (var i = 0; i < _SAFE_FONTS.length; i++) {
+    if (_SAFE_FONTS[i].toLowerCase() === f) return true;
+  }
+  return false;
+}
+
+function scanForIssues(templateNode) {
+  var issues = [];
+  var _seenFonts = {}; // deduplicate per font family
+
+  function push(severity, id, title, desc, node, fieldId) {
+    issues.push({
+      severity: severity,
+      id:       id,
+      title:    title,
+      desc:     desc,
+      nodeId:   node ? node.id                  : null,
+      nodeName: node ? (node.name || 'Unnamed') : null,
+      fieldId:  fieldId || null,
+    });
+  }
+
+  // ── Template-level checks ─────────────────────────────────
+  var tw = Math.round(templateNode.width);
+  if (tw > 600) {
+    push('minor', 'tmpl-wide',
+      'Template width exceeds 600px',
+      'Most email clients cap content at 600px. Templates wider than this may cause horizontal scrolling.',
+      templateNode);
+  }
+  if (tw < 320) {
+    push('minor', 'tmpl-narrow',
+      'Template width is below 320px',
+      '320px is the smallest common mobile viewport. Templates narrower than this may appear clipped or compressed on phones.',
+      templateNode);
+  }
+
+  // ── Recursive tree walk ───────────────────────────────────
+  function walk(node, depth) {
+    if (!node || node.visible === false) return;
+    var cfg = parseNodeConfig(node);
+    var t   = node.type;
+
+    // Href validity — applies to every node type
+    if (cfg.href && cfg.href.indexOf('http') !== 0) {
+      var _hrefField = cfg.frameType === 'button' ? 'inp-btn-link'
+                     : cfg.frameType === 'image'  ? 'inp-img-href'
+                     : 'inp-href';
+      push('major', 'bad-href',
+        'Hyperlink uses a relative URL',
+        'URLs without https:// may not resolve correctly in some email clients.',
+        node, _hrefField);
+    }
+
+    // If this node is tagged as an image frame, treat it as a leaf —
+    // run only image-level checks and do not recurse into its children.
+    if (cfg.frameType === 'image' || cfg.exportImg) {
+      if (!cfg.src) {
+        push('critical', 'img-no-src',
+          'Image has no source URL',
+          'The src attribute on this image is empty. Without a source URL, the image won\'t load.',
+          node, 'inp-src');
+      } else if (cfg.src.indexOf('http') !== 0) {
+        push('major', 'img-relative-url',
+          'Image source URL uses a relative URL',
+          'URLs without https:// may not resolve correctly in some email clients.',
+          node, 'inp-src');
+      }
+      if (!cfg.alt) {
+        push('minor', 'img-no-alt',
+          'Image is missing alt text',
+          'Set alt text in the plugin so readers see a description if images are blocked or fail to load.',
+          node, 'inp-alt');
+      }
+      return; // do not inspect children of an image frame
+    }
+
+    // 4 — Auto-layout OFF with multiple children
+    if ((t === 'FRAME' || t === 'COMPONENT' || t === 'INSTANCE') &&
+        node.layoutMode === 'NONE' && node.children && node.children.length > 1) {
+      var visCount = 0;
+      for (var vi = 0; vi < node.children.length; vi++) {
+        if (node.children[vi].visible !== false) visCount++;
+      }
+      if (visCount > 1) {
+        push('critical', 'no-autolayout',
+          'Frame has no auto-layout',
+          'The plugin will stack its children vertically in layer order, ignoring any positions, overlaps, or offsets.',
+          node);
+      }
+    }
+
+    // 10 — Horizontal children overflow parent
+    if ((t === 'FRAME' || t === 'COMPONENT' || t === 'INSTANCE') &&
+        node.layoutMode === 'HORIZONTAL' && node.children && node.children.length > 0) {
+      var nodeW    = Math.round(node.width);
+      var innerW   = nodeW - safeNum(node.paddingLeft, 0) - safeNum(node.paddingRight, 0);
+      var spacing  = safeNum(node.itemSpacing, 0);
+      var fixedSum = 0;
+      var fixedCnt = 0;
+      for (var ki = 0; ki < node.children.length; ki++) {
+        var kc = node.children[ki];
+        if (kc.visible === false) continue;
+        var kFill = (kc.layoutGrow === 1) || (kc.layoutSizingHorizontal === 'FILL');
+        if (!kFill) { fixedSum += Math.round(kc.width); fixedCnt++; }
+      }
+      var gapSum = fixedCnt > 1 ? spacing * (fixedCnt - 1) : 0;
+      if (innerW > 0 && (fixedSum + gapSum) > innerW + 1) {
+        push('major', 'hz-overflow',
+          'Content overflows the frame by ' + ((fixedSum + gapSum) - innerW) + 'px',
+          'Children (' + fixedSum + 'px) and gaps (' + gapSum + 'px) add up to ' + (fixedSum + gapSum) + 'px, but the frame\'s inner width is ' + innerW + 'px. Content will overflow.',
+          node);
+      }
+    }
+
+    // 1, 2, 6 — Image checks (nodes that resolve as images but aren't #frameType:image)
+    if (isImgNode(node)) {
+      // Detect IMAGE fill with no explicit plugin tag — user needs to set frame type first
+      var _hasImgFill = false;
+      if (node.fills && node.fills !== figma.mixed) {
+        for (var ifi = 0; ifi < node.fills.length; ifi++) {
+          if (node.fills[ifi].type === 'IMAGE' && node.fills[ifi].visible !== false) {
+            _hasImgFill = true; break;
+          }
+        }
+      }
+      if (_hasImgFill && !cfg.src) {
+        push('critical', 'img-fill-needs-tag',
+          'Image fill detected but frame type is not set to Image',
+          'Change the frame type to Image so the plugin can export this layer correctly.',
+          node, 'custom-sel-frame');
+      } else {
+        if (!cfg.src) {
+          push('critical', 'img-no-src',
+            'Image has no source URL',
+            'The src attribute on this image is empty. Without a source URL, the image won\'t load.',
+            node);
+        } else if (cfg.src.indexOf('http') !== 0) {
+          push('major', 'img-relative-url',
+            'Image source URL uses a relative URL',
+            'URLs without https:// may not resolve correctly in some email clients.',
+            node);
+        }
+        if (!cfg.alt) {
+          push('minor', 'img-no-alt',
+            'Image is missing alt text',
+            'Set alt text in the plugin so readers see a description if images are blocked or fail to load.',
+            node);
+        }
+      }
+    }
+
+    // 7 — Vector/shape silently skipped
+    var _skipTypes = ['VECTOR','STAR','POLYGON','ELLIPSE','LINE','BOOLEAN_OPERATION'];
+    var _isSkip = false;
+    for (var si = 0; si < _skipTypes.length; si++) {
+      if (t === _skipTypes[si]) { _isSkip = true; break; }
+    }
+    if (_isSkip && !cfg.src && !cfg.exportImg) {
+      push('major', 'vector-skipped',
+        (t.charAt(0) + t.slice(1).toLowerCase()).replace('_', ' ') + ' is not supported in email',
+        'This shape type has no HTML equivalent. You can export this layer as an image instead.',
+        node);
+    }
+
+    // 3, 19 — Button checks
+    if (cfg.frameType === 'button') {
+      if (!cfg.href) {
+        push('critical', 'btn-no-href',
+          'Button has no link',
+          'No destination URL is set on this button. It will appear in the email but won\'t be clickable.',
+          node, 'inp-btn-link');
+      }
+      var btnText = null;
+      if (node.findOne) btnText = node.findOne(function(n) { return n.type === 'TEXT' && n.visible !== false; });
+      if (!btnText) {
+        push('major', 'btn-no-text',
+          'Button has no visible text',
+          'No text layer found inside this button. The email will default to \'Click here\' as the button label.',
+          node);
+      }
+    }
+
+    // TEXT node checks (12, 13, 14, 15)
+    if (t === 'TEXT') {
+      // 12 — Non-web-safe font (deduplicated per font family)
+      var family = (node.fontName && node.fontName !== figma.mixed) ? node.fontName.family : null;
+      if (family && !_isSafeFont(family) && !_seenFonts[family]) {
+        _seenFonts[family] = true;
+        push('major', 'unsafe-font-' + family,
+          'Non-web-safe font: ' + family,
+          'This font may not render in all email clients and fall back to a system font.',
+          node);
+      }
+      // 15 — Text node opacity
+      if (typeof node.opacity === 'number' && node.opacity < 1) {
+        push('minor', 'text-opacity',
+          'Text layer has opacity set to ' + Math.round(node.opacity * 100) + '%',
+          'Opacity on text isn\'t supported in most email clients. This text will appear fully opaque.',
+          node);
+      }
+      return; // no children on TEXT
+    }
+
+    // 15 — Frame opacity
+    if ((t === 'FRAME' || t === 'COMPONENT' || t === 'INSTANCE') &&
+        typeof node.opacity === 'number' && node.opacity < 1) {
+      push('minor', 'frame-opacity',
+        'Section has opacity set to ' + Math.round(node.opacity * 100) + '%',
+        'Opacity on sections isn\'t applied in email. This section will appear fully opaque.',
+        node);
+    }
+
+    // 16, 17 — Fill checks
+    if (node.fills && node.fills !== figma.mixed && node.fills.length > 0) {
+      var visibleFills = [];
+      for (var fi = 0; fi < node.fills.length; fi++) {
+        if (node.fills[fi].visible !== false) visibleFills.push(node.fills[fi]);
+      }
+      if (visibleFills.length > 0) {
+        var hasSolid    = false;
+        var hasGradient = false;
+        for (var fj = 0; fj < visibleFills.length; fj++) {
+          var ft = visibleFills[fj].type;
+          if (ft === 'SOLID') { hasSolid = true; }
+          if (ft === 'GRADIENT_LINEAR' || ft === 'GRADIENT_RADIAL' ||
+              ft === 'GRADIENT_ANGULAR' || ft === 'GRADIENT_DIAMOND') { hasGradient = true; }
+          // IMAGE fills are handled by isImgNode() — not a gradient, skip
+        }
+        if (hasGradient && !hasSolid) {
+          push('major', 'gradient-fill',
+            'Gradient fill is not supported',
+            'Gradient fills aren\'t rendered in email HTML. This layer\'s background will appear transparent.',
+            node);
+        }
+        if (visibleFills.length > 1) {
+          push('minor', 'multi-fill',
+            'Multiple fill values detected',
+            'Email only supports a single fill per layer. Only the topmost fill will render and the rest will be dropped.',
+            node);
+        }
+      }
+    }
+
+    // 18 — Effects
+    if (node.effects && node.effects !== figma.mixed && node.effects.length > 0) {
+      var _effectLabels = { DROP_SHADOW: 'drop shadow', INNER_SHADOW: 'inner shadow', LAYER_BLUR: 'layer blur', BACKGROUND_BLUR: 'background blur' };
+      var foundEffects = [];
+      for (var ei = 0; ei < node.effects.length; ei++) {
+        var eff = node.effects[ei];
+        if (eff.visible === false) continue;
+        var lbl = _effectLabels[eff.type];
+        if (!lbl) continue;
+        var already = false;
+        for (var ej = 0; ej < foundEffects.length; ej++) { if (foundEffects[ej] === lbl) { already = true; break; } }
+        if (!already) foundEffects.push(lbl);
+      }
+      if (foundEffects.length > 0) {
+        push('major', 'effects',
+          'Figma effect not supported: ' + foundEffects.join(', '),
+          'Figma effects aren\'t rendered in email HTML. This effect will not be visible in the email.',
+          node);
+      }
+    }
+
+    // 22 — GROUP nodes
+    if (t === 'GROUP') {
+      push('major', 'group-node',
+        'Group node detected',
+        'Groups don\'t have auto-layout. Convert this to a frame with auto-layout so positions and layering show correctly in email.',
+        node);
+    }
+
+    // Recurse into children
+    if (node.children) {
+      for (var ci = 0; ci < node.children.length; ci++) {
+        walk(node.children[ci], depth + 1);
+      }
+    }
+  }
+
+  walk(templateNode, 0);
+  return issues;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -2181,6 +2573,9 @@ var _bpMobileId     = null;
 // so inner content adapts to the screen instead of staying at fixed px widths.
 var _mobileMode      = false;
 var _mobileFrameW    = 380; // updated before each mobile render
+// Per-generation mobile CSS rules collected during node rendering, flushed into @media block.
+var _mobileCssRules  = [];
+function mobClass(nodeId) { return 'mob-' + nodeId.replace(/:/g, '-'); }
 
 function sendSelectionToUI() {
   var sel = figma.currentPage.selection;
@@ -2189,11 +2584,45 @@ function sendSelectionToUI() {
   var cfg = parseNodeConfig(node);
   figma.ui.postMessage({
     type: 'selection',
-    node: { id: node.id, name: node.name, type: node.type, cfg: cfg }
+    node: { id: node.id, name: node.name, type: node.type, layoutMode: (node.layoutMode || 'NONE'), cfg: cfg }
   });
 }
 figma.on('selectionchange', sendSelectionToUI);
 sendSelectionToUI();
+
+// ── Live issues scan on document change ──────────────────────
+var _issuesTabActive  = false;
+var _lastLiveScanTs   = 0;
+var _LIVE_SCAN_THROTTLE = 800; // ms — run at most once per 800ms during rapid edits
+
+function _debouncedIssueScan() {
+  if (!_issuesTabActive) return;
+  var now = Date.now();
+  if (now - _lastLiveScanTs < _LIVE_SCAN_THROTTLE) return;
+  _lastLiveScanTs = now;
+  if (_respFrameId) {
+    figma.getNodeByIdAsync(_respFrameId).then(function(n) {
+      if (n) _runLiveScan(n);
+    }).catch(function() {});
+    return;
+  }
+  var sel = figma.currentPage.selection[0];
+  if (sel) _runLiveScan(sel);
+}
+
+function _runLiveScan(scanNode) {
+  var scanCfg = parseNodeConfig(scanNode);
+  if (scanCfg.frameType !== 'template') return;
+  var issues = [];
+  try { issues = scanForIssues(scanNode); } catch(e) {}
+  figma.ui.postMessage({ type: 'issues-result', issues: issues, live: true });
+}
+
+figma.loadAllPagesAsync().then(function() {
+  figma.on('documentchange', _debouncedIssueScan);
+}).catch(function() {
+  // If loadAllPagesAsync is unavailable the plugin still works — manual rescan remains functional
+});
 
 figma.ui.onmessage = function(msg) {
   var node = figma.currentPage.selection[0];
@@ -2210,15 +2639,31 @@ figma.ui.onmessage = function(msg) {
     else if (key === 'comment')     { node.setPluginData('comment',     val || ''); }
     else if (key === 'rawCode')     { node.setPluginData('rawCode',     val || ''); }
     else if (key === 'preheader')   { node.setPluginData('preheader',   val || ''); }
-    else if (key === 'head')        { node.setPluginData('head',        val || ''); }
+    else if (key === 'headStart')   { node.setPluginData('headStart',   val || ''); }
+    else if (key === 'headEnd')     { node.setPluginData('headEnd',     val || ''); }
+    else if (key === 'bodyStart')   { node.setPluginData('bodyStart',   val || ''); }
+    else if (key === 'bodyEnd')     { node.setPluginData('bodyEnd',     val || ''); }
     else if (key === 'subject')     { node.setPluginData('subject',     val || ''); }
     else if (key === 'utmSource')   { node.setPluginData('utmSource',   val || ''); }
     else if (key === 'utmMedium')   { node.setPluginData('utmMedium',   val || ''); }
     else if (key === 'utmCampaign') { node.setPluginData('utmCampaign', val || ''); }
     else if (key === 'utmContent')  { node.setPluginData('utmContent',  val || ''); }
-    else if (key === 'utmTerm')     { node.setPluginData('utmTerm',     val || ''); }
+    else if (key === 'utmTerm')        { node.setPluginData('utmTerm',        val || ''); }
+    else if (key === 'mobileStack')    { node.setPluginData('mobileStack',    val || ''); }
+    else if (key === 'mobileAlign')    { node.setPluginData('mobileAlign',    val || ''); }
+    else if (key === 'mobilePadTop')   { node.setPluginData('mobilePadTop',   val || ''); }
+    else if (key === 'mobilePadRight') { node.setPluginData('mobilePadRight', val || ''); }
+    else if (key === 'mobilePadBottom'){ node.setPluginData('mobilePadBottom',val || ''); }
+    else if (key === 'mobilePadLeft')  { node.setPluginData('mobilePadLeft',  val || ''); }
+    else if (key === 'mobileFontSize') { node.setPluginData('mobileFontSize', val || ''); }
+    else if (key === 'mobileLineHeight'){ node.setPluginData('mobileLineHeight', val || ''); }
     else                                setTag(node, key, val);
     figma.ui.postMessage({ type: 'name-updated', name: node.name });
+    // Live-update the Issues tab whenever a property is changed via the panel
+    if (_issuesTabActive) {
+      _lastLiveScanTs = 0; // bypass throttle — user just made a deliberate change
+      _debouncedIssueScan();
+    }
     return;
   }
 
@@ -2235,7 +2680,10 @@ figma.ui.onmessage = function(msg) {
       try {
         var html = generateEmailHtml(genNode, {
           preheader:   cfg.preheader   || '',
-          headCode:    cfg.head        || '',
+          headStart:   cfg.headStart   || '',
+          headEnd:     cfg.headEnd     || '',
+          bodyStart:   cfg.bodyStart   || '',
+          bodyEnd:     cfg.bodyEnd     || '',
           emailTitle:  cfg.subject     || genMsg.emailTitle || genNode.name,
           emailWidth:  Math.round(genNode.width),
           utmSource:   cfg.utmSource   || '',
@@ -2269,17 +2717,30 @@ figma.ui.onmessage = function(msg) {
 
   // ── Responsive mode: capture a frame ────────────────────────
   if (msg.type === 'set-resp-frame') {
-    var respNode = figma.currentPage.selection[0];
-    if (!respNode) {
-      figma.ui.postMessage({ type: 'error', message: 'Select a frame in Figma first, then click Set.' });
-      return;
+    // When the UI sends a nodeId (auto-lock or manual Set), look up that
+    // specific node via getNodeByIdAsync.  This eliminates the race condition
+    // where figma.currentPage.selection[0] has already changed to a different
+    // frame by the time this message is processed (e.g. the user navigated to
+    // an internal frame right after triggering the auto-lock on the Template).
+    function doSetResp(respNode) {
+      if (!respNode) {
+        figma.ui.postMessage({ type: 'error', message: 'Select a frame in Figma first, then click Set.' });
+        return;
+      }
+      if (respNode.type !== 'FRAME' && respNode.type !== 'COMPONENT' && respNode.type !== 'INSTANCE') {
+        figma.ui.postMessage({ type: 'error', message: 'Selection must be a Frame, Component, or Instance.' });
+        return;
+      }
+      _respFrameId = respNode.id;
+      figma.ui.postMessage({ type: 'resp-frame-set', id: respNode.id, name: respNode.name });
     }
-    if (respNode.type !== 'FRAME' && respNode.type !== 'COMPONENT' && respNode.type !== 'INSTANCE') {
-      figma.ui.postMessage({ type: 'error', message: 'Selection must be a Frame, Component, or Instance.' });
-      return;
+    if (msg.nodeId) {
+      figma.getNodeByIdAsync(msg.nodeId).then(doSetResp).catch(function(e) {
+        figma.ui.postMessage({ type: 'error', message: 'Could not load frame: ' + (e.message || String(e)) });
+      });
+    } else {
+      doSetResp(figma.currentPage.selection[0]);
     }
-    _respFrameId = respNode.id;
-    figma.ui.postMessage({ type: 'resp-frame-set', id: respNode.id, name: respNode.name });
     return;
   }
 
@@ -2291,27 +2752,39 @@ figma.ui.onmessage = function(msg) {
 
   // ── Breakpoint mode: capture a frame for desktop or mobile ──
   if (msg.type === 'set-breakpoint-frame') {
-    var bpNode = figma.currentPage.selection[0];
-    if (!bpNode) {
-      figma.ui.postMessage({ type: 'error', message: 'Select a frame in Figma first, then click Set.' });
-      return;
+    // Same nodeId-first approach as set-resp-frame to avoid the race condition
+    // where figma.currentPage.selection[0] has drifted by the time this message
+    // is processed.
+    var bpRole = msg.role;
+    function doSetBp(bpNode) {
+      if (!bpNode) {
+        figma.ui.postMessage({ type: 'error', message: 'Select a frame in Figma first, then click Set.' });
+        return;
+      }
+      if (bpNode.type !== 'FRAME' && bpNode.type !== 'COMPONENT' && bpNode.type !== 'INSTANCE') {
+        figma.ui.postMessage({ type: 'error', message: 'Selection must be a Frame, Component, or Instance.' });
+        return;
+      }
+      if (bpRole === 'desktop') {
+        _bpDesktopId = bpNode.id;
+      } else {
+        _bpMobileId = bpNode.id;
+      }
+      figma.ui.postMessage({
+        type: 'breakpoint-frame-set',
+        role: bpRole,
+        id:   bpNode.id,
+        name: bpNode.name,
+        width: Math.round(bpNode.width)
+      });
     }
-    if (bpNode.type !== 'FRAME' && bpNode.type !== 'COMPONENT' && bpNode.type !== 'INSTANCE') {
-      figma.ui.postMessage({ type: 'error', message: 'Selection must be a Frame, Component, or Instance.' });
-      return;
-    }
-    if (msg.role === 'desktop') {
-      _bpDesktopId = bpNode.id;
+    if (msg.nodeId) {
+      figma.getNodeByIdAsync(msg.nodeId).then(doSetBp).catch(function(e) {
+        figma.ui.postMessage({ type: 'error', message: 'Could not load frame: ' + (e.message || String(e)) });
+      });
     } else {
-      _bpMobileId = bpNode.id;
+      doSetBp(figma.currentPage.selection[0]);
     }
-    figma.ui.postMessage({
-      type: 'breakpoint-frame-set',
-      role: msg.role,
-      id:   bpNode.id,
-      name: bpNode.name,
-      width: Math.round(bpNode.width)
-    });
     return;
   }
 
@@ -2339,7 +2812,10 @@ figma.ui.onmessage = function(msg) {
           var desktopCfg = parseNodeConfig(desktopNode);
           var bpHtml = generateBreakpointEmailHtml(desktopNode, mobileNode, {
             preheader:   desktopCfg.preheader   || '',
-            headCode:    desktopCfg.head        || '',
+            headStart:   desktopCfg.headStart   || '',
+            headEnd:     desktopCfg.headEnd     || '',
+            bodyStart:   desktopCfg.bodyStart   || '',
+            bodyEnd:     desktopCfg.bodyEnd     || '',
             emailTitle:  desktopCfg.subject     || bpMsg.emailTitle || desktopNode.name,
             utmSource:   desktopCfg.utmSource   || '',
             utmMedium:   desktopCfg.utmMedium   || '',
@@ -2369,6 +2845,50 @@ figma.ui.onmessage = function(msg) {
 
   if (msg.type === 'resize-ui') {
     figma.ui.resize(Math.round(msg.width), Math.round(msg.height));
+    return;
+  }
+
+  // ── Issues: scan the active template for issues ──────────────
+  if (msg.type === 'scan-issues') {
+    function runIssueScan(scanNode) {
+      if (!scanNode) {
+        figma.ui.postMessage({ type: 'issues-result', issues: [], error: 'no-template' });
+        return;
+      }
+      var scanCfg = parseNodeConfig(scanNode);
+      if (scanCfg.frameType !== 'template') {
+        figma.ui.postMessage({ type: 'issues-result', issues: [], error: 'not-template' });
+        return;
+      }
+      var issues = [];
+      try { issues = scanForIssues(scanNode); } catch(e) {}
+      figma.ui.postMessage({ type: 'issues-result', issues: issues });
+    }
+
+    if (_respFrameId) {
+      figma.getNodeByIdAsync(_respFrameId).then(function(lockedNode) {
+        if (!lockedNode) { _respFrameId = null; runIssueScan(figma.currentPage.selection[0]); }
+        else runIssueScan(lockedNode);
+      }).catch(function() { runIssueScan(figma.currentPage.selection[0]); });
+    } else {
+      runIssueScan(figma.currentPage.selection[0]);
+    }
+    return;
+  }
+
+  // ── Select node in Figma canvas (from Issues "View" button) ──
+  if (msg.type === 'select-node') {
+    figma.getNodeByIdAsync(msg.nodeId).then(function(targetNode) {
+      if (targetNode) {
+        figma.currentPage.selection = [targetNode];
+        figma.viewport.scrollAndZoomIntoView([targetNode]);
+      }
+    }).catch(function() {});
+    return;
+  }
+
+  if (msg.type === 'issues-tab-active') {
+    _issuesTabActive = msg.active;
     return;
   }
 
