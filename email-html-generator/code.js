@@ -17,9 +17,19 @@
 
 // ── Tag read/write helpers ───────────────────────────────────
 function getTag(name, key) {
-  var re = new RegExp('#' + key + '\\(([^)]+)\\)', 'i');
-  var m  = name.match(re);
-  return m ? m[1].trim() : null;
+  // Use depth-counting so values containing ')' (e.g. template expressions) are read correctly.
+  var prefix = '#' + key + '(';
+  var idx = name.toLowerCase().indexOf(prefix.toLowerCase());
+  if (idx === -1) return null;
+  var start = idx + prefix.length;
+  var depth = 1;
+  var i = start;
+  while (i < name.length && depth > 0) {
+    if (name[i] === '(') depth++;
+    else if (name[i] === ')') depth--;
+    if (depth > 0) i++;
+  }
+  return depth === 0 ? name.slice(start, i).trim() : null;
 }
 function hasTag(name, key) {
   return new RegExp('#' + key + '\\b', 'i').test(name);
@@ -29,13 +39,29 @@ function getFrameType(name) {
   return m ? m[1].toLowerCase() : null;
 }
 function setTag(node, key, value) {
-  var re = new RegExp('#' + key + '\\([^)]*\\)', 'gi');
+  // Use depth-counting to find existing tag bounds so values with ')' are handled correctly.
+  var prefix = '#' + key + '(';
+  var idx = node.name.toLowerCase().indexOf(prefix.toLowerCase());
+  if (idx === -1) {
+    // Tag not present — append if there's a value.
+    if (value) node.name = node.name.trim() + ' #' + key + '(' + value + ')';
+    return;
+  }
+  var valueStart = idx + prefix.length;
+  var depth = 1;
+  var i = valueStart;
+  while (i < node.name.length && depth > 0) {
+    if (node.name[i] === '(') depth++;
+    else if (node.name[i] === ')') depth--;
+    if (depth > 0) i++;
+  }
+  var tagEnd = i + 1; // position after the closing ')'
+  var before = node.name.slice(0, idx);
+  var after  = node.name.slice(tagEnd);
   if (!value) {
-    node.name = node.name.replace(re, '').replace(/\s+/g, ' ').trim();
-  } else if (re.test(node.name)) {
-    node.name = node.name.replace(re, '#' + key + '(' + value + ')');
+    node.name = (before + after).replace(/\s+/g, ' ').trim();
   } else {
-    node.name = node.name.trim() + ' #' + key + '(' + value + ')';
+    node.name = (before + '#' + key + '(' + value + ')' + after).replace(/\s+/g, ' ').trim();
   }
 }
 function setFrameType(node, type) {
@@ -85,6 +111,13 @@ function parseNodeConfig(node) {
     mobilePadLeft:    gpd('mobilePadLeft')    || '',
     mobileFontSize:   gpd('mobileFontSize')   || '',
     mobileLineHeight: gpd('mobileLineHeight') || '',
+    mobileTextAlign:  gpd('mobileTextAlign')  || '',  // 'left' | 'center' | 'right'
+    mobileGap:        gpd('mobileGap')        || '',
+    // Semantic HTML tag for TEXT nodes: '' (auto → <p>) | 'h1'…'h6' | 'p'
+    htmlTag:          gpd('htmlTag')          || '',
+    // Background image — section/template frames only
+    bgImgOn:  gpd('bgImgOn') === '1',
+    bgImgSrc: gpd('bgImgSrc') || '',
   };
 }
 
@@ -96,6 +129,36 @@ function toHex2(v) {
 function rgbaToHex(r, g, b) {
   return '#' + toHex2(r) + toHex2(g) + toHex2(b);
 }
+
+// ── Blend (Gmail dark-mode white-preservation) ───────────────
+// STRICTLY OPT-IN. A text layer is "flagged for blend" when the designer sets
+// a non-normal blend mode on it (or its fill) in Figma — no colour/position
+// inference. When flagged, renderText wraps the <p> in the black-background
+// screen/difference sandwich (see BLEND markers in renderText + the generators)
+// so pure-white text survives Gmail's forced dark-mode colour inversion. The
+// wrapper rules are scoped to `u + .body`, which only Gmail matches, so Outlook
+// never renders the black boxes. Not flagged → zero blend traces in the output.
+function textBlendFlagged(node) {
+  if (!node) return false;
+  if (node.fills && node.fills !== figma.mixed && node.fills.length) {
+    var f = node.fills[0];
+    if (f && f.visible !== false && f.blendMode &&
+        f.blendMode !== 'NORMAL' && f.blendMode !== 'PASS_THROUGH') return true;
+  }
+  if (node.blendMode && node.blendMode !== 'NORMAL' && node.blendMode !== 'PASS_THROUGH') return true;
+  return false;
+}
+// True when a hex colour is (near) pure white — blend only reconstructs white.
+function isNearWhite(hex) {
+  if (!hex) return false;
+  var h = hex.replace('#', '');
+  if (h.length !== 6) return false;
+  var r = parseInt(h.slice(0, 2), 16),
+      g = parseInt(h.slice(2, 4), 16),
+      b = parseInt(h.slice(4, 6), 16);
+  return r >= 250 && g >= 250 && b >= 250;
+}
+
 function getSolidFill(node) {
   if (!node.fills || node.fills === figma.mixed || !node.fills.length) return null;
   var f = node.fills[0];
@@ -129,6 +192,11 @@ function safeNum(v, fb) {
 }
 function escapeHtml(s) {
   return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+// For href/src attributes: same as escapeHtml but preserves " so template
+// expressions like {{ func "string" }} are not corrupted.
+function escapeUrl(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 function ind(depth) {
   var s = '';
@@ -311,6 +379,7 @@ function renderImg(node, cfg, d, align) {
   var alt = cfg.alt || '';
   var w   = Math.round(node.width);
   var h   = Math.round(node.height);
+  var rad = getCornerRadii(node);
 
   // SMALL ICON OPTIMISATION: images ≤ 48px in both dimensions skip the
   // outer <table> wrapper and emit a bare <img> tag. This dramatically
@@ -322,11 +391,11 @@ function renderImg(node, cfg, d, align) {
   // BeeFree uses this same flat pattern for social icons (width="32").
   var isSmallIcon = (w <= 48 && h <= 48 && w > 0 && h > 0);
   if (isSmallIcon) {
-    var sst = 'display:block;width:' + w + 'px;height:auto;border:0;';
-    var simgTag = ind(d) + '<img src="' + escapeHtml(src) + '" alt="' + escapeHtml(alt) +
+    var sst = 'display:block;width:' + w + 'px;height:auto;border:0;' + (rad.any ? rad.css : '');
+    var simgTag = ind(d) + '<img src="' + escapeUrl(src) + '" alt="' + escapeHtml(alt) +
                  '" width="' + w + '" height="' + h + '" border="0" style="' + sst + '">';
     if (cfg.href) {
-      simgTag = ind(d) + '<a href="' + escapeHtml(cfg.href) + '" target="_blank" ' +
+      simgTag = ind(d) + '<a href="' + escapeUrl(cfg.href) + '" target="_blank" ' +
               'style="display:block;text-decoration:none;">\n' +
               simgTag + '\n' +
               ind(d) + '</a>';
@@ -345,13 +414,28 @@ function renderImg(node, cfg, d, align) {
      : 'margin:0 auto;')
     : '';
   var tblWAttr  = tblW ? ' width="' + tblW + '" align="' + align + '"' : ' width="100%"';
+  // Apply corner radius + overflow:hidden to the wrapping table so the image
+  // is clipped to the rounded corners. border-collapse:separate is required
+  // for border-radius to take effect on a <table> element.
   var tblWSty   = tblW ? 'width:' + tblW + 'px;max-width:' + tblW + 'px;' + marginStyle : 'width:100%;';
+  if (rad.any) {
+    tblWSty += 'border-collapse:separate;border-spacing:0;' + rad.css + 'overflow:hidden;';
+  }
   // Fluid mobile img: use width:100% on the img tag so it scales with the container.
   // Fixed: keep exact pixel width (preserves size on desktop/Outlook).
+  // FILL img: wrapper is width:100% so margin on the img itself handles alignment.
+  var fillImgMargin = (isFillImg && !isMobileFluidImg)
+    ? (align === 'left'  ? 'margin:0 auto;'
+     : align === 'right' ? 'margin-left:auto;'
+     : 'margin:0 auto;')
+    : '';
   var st = isMobileFluidImg
     ? 'display:block;width:100%;max-width:' + w + 'px;height:auto;border:0;'
-    : 'display:block;width:' + w + 'px;height:auto;border:0;';
-  var imgTag = ind(d+2) + '<img src="' + escapeHtml(src) + '" alt="' + escapeHtml(alt) +
+    : 'display:block;width:' + w + 'px;height:auto;border:0;' + fillImgMargin;
+  // Also stamp border-radius directly on the <img> for clients (e.g. Apple Mail,
+  // some webmail) that render img radius independently of the table wrapper.
+  if (rad.any) { st += rad.css; }
+  var imgTag = ind(d+2) + '<img src="' + escapeUrl(src) + '" alt="' + escapeHtml(alt) +
                '" width="' + w + '" height="' + h + '" border="0" style="' + st + '">';
 
   var inner = ind(d) + '<table cellpadding="0" cellspacing="0" border="0" role="presentation"' + tblWAttr + ' style="' + tblWSty + '">\n' +
@@ -363,7 +447,7 @@ function renderImg(node, cfg, d, align) {
     ind(d) + '</table>';
 
   if (cfg.href) {
-    inner = ind(d) + '<a href="' + escapeHtml(cfg.href) + '" target="_blank" ' +
+    inner = ind(d) + '<a href="' + escapeUrl(cfg.href) + '" target="_blank" ' +
             'style="display:block;text-decoration:none;">\n' +
             inner + '\n' +
             ind(d) + '</a>';
@@ -378,7 +462,7 @@ function renderBareImg(node, cfg, d) {
   var w   = Math.round(node.width);
   var h   = Math.round(node.height);
   var st  = 'display:block;width:' + w + 'px;height:auto;border:0;margin:0 auto;';
-  return ind(d) + '<img src="' + escapeHtml(src) + '" alt="' + escapeHtml(alt) +
+  return ind(d) + '<img src="' + escapeUrl(src) + '" alt="' + escapeHtml(alt) +
          '" width="' + w + '" height="' + h + '" border="0" style="' + st + '">';
 }
 
@@ -412,7 +496,7 @@ function renderIconContainer(node, cfg, d) {
 
   var inner;
   if (rad.any) {
-    inner = roundedWrapper(bgS, padS, rad, imgHtml.trim(), d);
+    inner = roundedWrapper(bgS, padS, rad, imgHtml.trim(), d, false, '', w, Math.round(node.height));
   } else if (bgS || padS) {
     var tdStyle = bgS + padS;
     inner = ind(d) + '<table cellpadding="0" cellspacing="0" border="0" role="presentation"' + tblWAttr + ' style="' + tblWSty + '">\n' +
@@ -427,7 +511,7 @@ function renderIconContainer(node, cfg, d) {
   }
 
   if (cfg.href) {
-    inner = ind(d) + '<a href="' + escapeHtml(cfg.href) + '" target="_blank" style="display:block;text-decoration:none;">\n' +
+    inner = ind(d) + '<a href="' + escapeUrl(cfg.href) + '" target="_blank" style="display:block;text-decoration:none;">\n' +
       inner + '\n' + ind(d) + '</a>';
   }
   return inner;
@@ -453,17 +537,37 @@ function segmentFillColor(fills) {
 // and letter-spacing — all as inline CSS (email-client-safe).
 // Falls back to plain escaped text if the node has only one
 // uniform style or if getStyledTextSegments is unavailable.
+// Also detects Figma bullet/numbered list formatting (listOptions +
+// indentation) and, when present, returns a { list:true, blocks:[...] }
+// structure instead of a plain string — see renderListBlocks / renderText.
 function buildSegmentedText(node, baseColor, baseFontSize) {
   var segments;
   try {
     segments = node.getStyledTextSegments([
       'fills', 'fontSize', 'fontName',
-      'textDecoration', 'textCase', 'letterSpacing'
+      'textDecoration', 'textCase', 'letterSpacing',
+      'listOptions', 'indentation'
     ]);
   } catch(e) {
     return escapeHtml(node.characters || '').replace(/\n/g, '<br>');
   }
-  if (!segments || segments.length < 2) {
+  if (!segments || !segments.length) {
+    return escapeHtml(node.characters || '').replace(/\n/g, '<br>');
+  }
+
+  // A single uniform-style bullet list can still come back as ONE segment
+  // (nothing but listOptions/indentation distinguishes its lines), so list
+  // detection must run before the "too few segments, skip the overhead"
+  // shortcut below — otherwise a plain, evenly-styled bullet list would
+  // silently fall through to the plain-text path and lose its bullets.
+  var hasList = false;
+  for (var hi = 0; hi < segments.length; hi++) {
+    var hlo = segments[hi].listOptions;
+    if (hlo && hlo !== figma.mixed && hlo.type && hlo.type !== 'NONE') { hasList = true; break; }
+  }
+  if (hasList) return buildListAwareText(segments, baseColor, baseFontSize);
+
+  if (segments.length < 2) {
     return escapeHtml(node.characters || '').replace(/\n/g, '<br>');
   }
 
@@ -471,69 +575,184 @@ function buildSegmentedText(node, baseColor, baseFontSize) {
   for (var si = 0; si < segments.length; si++) {
     var seg = segments[si];
     if (!seg.characters) continue;
-
-    var spanSt = [];
-
-    // ── Color ──────────────────────────────────────────────
-    var sColor = segmentFillColor(seg.fills);
-    if (sColor && sColor !== baseColor) {
-      spanSt.push('color:' + sColor);
-    }
-
-    // ── Font size ──────────────────────────────────────────
-    var sFs = safeNum(seg.fontSize, baseFontSize);
-    if (Math.round(sFs) !== Math.round(baseFontSize)) {
-      spanSt.push('font-size:' + Math.round(sFs) + 'px');
-      // keep line-height proportional when size changes
-      spanSt.push('line-height:' + Math.round(sFs * 1.5) + 'px');
-    }
-
-    // ── Font weight + style ────────────────────────────────
-    if (seg.fontName && seg.fontName !== figma.mixed) {
-      var sStyle  = (seg.fontName.style || '').toLowerCase();
-      var sBold   = sStyle.indexOf('bold')   !== -1;
-      var sItalic = sStyle.indexOf('italic') !== -1;
-      // Always set font-family explicitly on the span — Outlook and some email
-      // clients do not inherit font-family from the parent <p> onto child <span>
-      // elements, causing styled spans to fall back to the default serif font.
-      spanSt.push("font-family:'" + escapeHtml(seg.fontName.family) + "',Arial,sans-serif");
-      if (sBold)   spanSt.push('font-weight:bold');
-      if (sItalic) spanSt.push('font-style:italic');
-    }
-
-    // ── Text decoration ────────────────────────────────────
-    var sTd = seg.textDecoration;
-    if (sTd && sTd !== figma.mixed) {
-      if      (sTd === 'UNDERLINE')      spanSt.push('text-decoration:underline');
-      else if (sTd === 'STRIKETHROUGH')  spanSt.push('text-decoration:line-through');
-    }
-
-    // ── Text case ──────────────────────────────────────────
-    var sTt = seg.textCase;
-    if (sTt && sTt !== figma.mixed) {
-      if      (sTt === 'UPPER') spanSt.push('text-transform:uppercase');
-      else if (sTt === 'LOWER') spanSt.push('text-transform:lowercase');
-      else if (sTt === 'TITLE') spanSt.push('text-transform:capitalize');
-    }
-
-    // ── Letter spacing ─────────────────────────────────────
-    var sLs = seg.letterSpacing;
-    if (sLs && sLs !== figma.mixed) {
-      if (sLs.unit === 'PIXELS' && sLs.value !== 0) {
-        spanSt.push('letter-spacing:' + sLs.value.toFixed(1) + 'px');
-      } else if (sLs.unit === 'PERCENT' && sLs.value !== 0) {
-        spanSt.push('letter-spacing:' + (sLs.value / 100).toFixed(3) + 'em');
-      }
-    }
-
-    var segText = escapeHtml(seg.characters).replace(/\n/g, '<br>');
-    if (spanSt.length > 0) {
-      html += '<span style="' + spanSt.join(';') + '">' + segText + '</span>';
-    } else {
-      html += segText;
-    }
+    html += buildRunSpanHtml(seg.characters, seg, baseColor, baseFontSize).replace(/\n/g, '<br>');
   }
   return html;
+}
+
+// ── Per-run inline HTML (color/size/weight/style/decoration/case/spacing) ──
+// `text` may contain literal newlines when called from the non-list path
+// (caller converts them to <br> afterward); the list path pre-splits on
+// \n before calling, so no newlines ever reach escapeHtml() from there.
+function buildRunSpanHtml(text, seg, baseColor, baseFontSize) {
+  var spanSt = [];
+
+  // ── Color ──────────────────────────────────────────────
+  var sColor = segmentFillColor(seg.fills);
+  if (sColor && sColor !== baseColor) {
+    spanSt.push('color:' + sColor);
+  }
+
+  // ── Font size ──────────────────────────────────────────
+  var sFs = safeNum(seg.fontSize, baseFontSize);
+  if (Math.round(sFs) !== Math.round(baseFontSize)) {
+    spanSt.push('font-size:' + Math.round(sFs) + 'px');
+    // keep line-height proportional when size changes
+    spanSt.push('line-height:' + Math.round(sFs * 1.5) + 'px');
+  }
+
+  // ── Font weight + style ────────────────────────────────
+  if (seg.fontName && seg.fontName !== figma.mixed) {
+    var sStyle  = (seg.fontName.style || '').toLowerCase();
+    var sBold   = sStyle.indexOf('bold')   !== -1;
+    var sItalic = sStyle.indexOf('italic') !== -1;
+    // Always set font-family explicitly on the span — Outlook and some email
+    // clients do not inherit font-family from the parent <p> onto child <span>
+    // elements, causing styled spans to fall back to the default serif font.
+    spanSt.push("font-family:'" + escapeHtml(seg.fontName.family) + "',Arial,sans-serif");
+    if (sBold)   spanSt.push('font-weight:bold');
+    if (sItalic) spanSt.push('font-style:italic');
+  }
+
+  // ── Text decoration ────────────────────────────────────
+  var sTd = seg.textDecoration;
+  if (sTd && sTd !== figma.mixed) {
+    if      (sTd === 'UNDERLINE')      spanSt.push('text-decoration:underline');
+    else if (sTd === 'STRIKETHROUGH')  spanSt.push('text-decoration:line-through');
+  }
+
+  // ── Text case ──────────────────────────────────────────
+  var sTt = seg.textCase;
+  if (sTt && sTt !== figma.mixed) {
+    if      (sTt === 'UPPER') spanSt.push('text-transform:uppercase');
+    else if (sTt === 'LOWER') spanSt.push('text-transform:lowercase');
+    else if (sTt === 'TITLE') spanSt.push('text-transform:capitalize');
+  }
+
+  // ── Letter spacing ─────────────────────────────────────
+  var sLs = seg.letterSpacing;
+  if (sLs && sLs !== figma.mixed) {
+    if (sLs.unit === 'PIXELS' && sLs.value !== 0) {
+      spanSt.push('letter-spacing:' + sLs.value.toFixed(1) + 'px');
+    } else if (sLs.unit === 'PERCENT' && sLs.value !== 0) {
+      spanSt.push('letter-spacing:' + (sLs.value / 100).toFixed(3) + 'em');
+    }
+  }
+
+  var segText = escapeHtml(text);
+  return spanSt.length > 0
+    ? ('<span style="' + spanSt.join(';') + '">' + segText + '</span>')
+    : segText;
+}
+
+// ── List-aware text: groups styled runs into lines, then groups
+// consecutive lines sharing the same list mode (plain / bullet / numbered)
+// into blocks. A single text node can mix plain paragraphs and list items
+// (e.g. a heading line followed by bullets) — each contiguous run of the
+// same mode becomes its own block; renderListBlocks turns blocks into
+// <p>/<ul>/<ol> HTML and joins them.
+function buildListAwareText(segments, baseColor, baseFontSize) {
+  var lines = [];   // { type: 'NONE'|'UNORDERED'|'ORDERED', indent: number, html: string }
+  var curRuns   = [];
+  var curType   = 'NONE';
+  var curIndent = 0;
+
+  for (var si = 0; si < segments.length; si++) {
+    var seg   = segments[si];
+    var chars = seg.characters || '';
+    if (!chars) continue;
+    var lo = seg.listOptions;
+    var segType   = (lo && lo !== figma.mixed && lo.type) ? lo.type : 'NONE';
+    var segIndent = safeNum(seg.indentation, 0);
+    var parts = chars.split('\n');
+    for (var pi = 0; pi < parts.length; pi++) {
+      curType   = segType;
+      curIndent = segIndent;
+      if (parts[pi]) {
+        curRuns.push(buildRunSpanHtml(parts[pi], seg, baseColor, baseFontSize));
+      }
+      // A '\n' followed this chunk (i.e. it's not the last split piece) → line ends here.
+      if (pi < parts.length - 1) {
+        lines.push({ type: curType, indent: curIndent, html: curRuns.join('') });
+        curRuns = [];
+      }
+    }
+  }
+  if (curRuns.length) {
+    lines.push({ type: curType, indent: curIndent, html: curRuns.join('') });
+  }
+  // Drop trailing wholly-empty lines (mirrors the trailing-<br> stripping
+  // done for plain text — a trailing \n in Figma shouldn't emit an empty
+  // bullet/paragraph).
+  while (lines.length && !lines[lines.length - 1].html) lines.pop();
+
+  if (!lines.length) return { list: true, blocks: [] };
+
+  // Group consecutive lines sharing the same mode.
+  var blocks = [];
+  var gi = 0;
+  while (gi < lines.length) {
+    var mode = lines[gi].type === 'ORDERED'   ? 'ol'
+             : lines[gi].type === 'UNORDERED' ? 'ul'
+             : 'text';
+    var group = [lines[gi]];
+    gi++;
+    while (gi < lines.length) {
+      var nextMode = lines[gi].type === 'ORDERED'   ? 'ol'
+                   : lines[gi].type === 'UNORDERED' ? 'ul'
+                   : 'text';
+      if (nextMode !== mode) break;
+      group.push(lines[gi]);
+      gi++;
+    }
+    blocks.push({ mode: mode, lines: group });
+  }
+  return { list: true, blocks: blocks };
+}
+
+// ── Render list-aware blocks into concatenated HTML ───────────
+// textTag/st/pClasses/d come from renderText — plain-mode blocks reuse the
+// node's own tag+typography exactly as non-list text would; list blocks
+// wrap in <ul>/<ol> with the same typography repeated inline (Outlook does
+// not reliably inherit font styling onto <li> from an ancestor <ul>).
+function renderListBlocks(blocks, textTag, st, pClasses, d) {
+  var baseStyle = st.join(';');
+  var out = [];
+  for (var bi = 0; bi < blocks.length; bi++) {
+    var block = blocks[bi];
+    if (block.mode === 'text') {
+      var joined = [];
+      for (var li = 0; li < block.lines.length; li++) joined.push(block.lines[li].html);
+      out.push(
+        ind(d) + '<' + textTag + (pClasses.length ? ' class="' + pClasses.join(' ') + '"' : '') +
+        ' style="' + baseStyle + '">' + joined.join('<br>') + '</' + textTag + '>'
+      );
+    } else {
+      var tag       = (block.mode === 'ol') ? 'ol' : 'ul';
+      var listType  = (block.mode === 'ol') ? 'decimal' : 'disc';
+      // Shorthand 'padding:0' already sits in baseStyle (pushed by renderText);
+      // the longhand padding-left declared after it wins for that one side
+      // only, leaving room for the marker while top/right/bottom stay 0.
+      var wrapStyle = baseStyle + ';padding-left:20px;list-style-type:' + listType + ';list-style-position:outside;';
+      var itemsHtml = '';
+      for (var ii = 0; ii < block.lines.length; ii++) {
+        var lvl       = safeNum(block.lines[ii].indent, 0);
+        // Mobile-override class (font-size/line-height/text-align !important
+        // rules built in renderText) must land on every element the CSS rule
+        // could plausibly target — repeat it on each <li>, not just the <ul>/
+        // <ol> wrapper, since some clients apply @media rules per-element
+        // rather than relying on inheritance from the list container.
+        var itemStyle = baseStyle + (lvl > 0 ? ';margin-left:' + (lvl * 20) + 'px' : '');
+        itemsHtml += ind(d + 1) + '<li' + (pClasses.length ? ' class="' + pClasses.join(' ') + '"' : '') +
+          ' style="' + itemStyle + '">' + block.lines[ii].html + '</li>\n';
+      }
+      out.push(
+        ind(d) + '<' + tag + (pClasses.length ? ' class="' + pClasses.join(' ') + '"' : '') +
+        ' style="' + wrapStyle + '">\n' + itemsHtml + ind(d) + '</' + tag + '>'
+      );
+    }
+  }
+  return out.join('\n');
 }
 
 // ── Render TEXT node ─────────────────────────────────────────
@@ -543,20 +762,45 @@ function renderText(node, cfg, d) {
   st.push('font-size:' + Math.round(fs) + 'px');
   st.push('mso-line-height-rule:exactly');
 
+  // Semantic tag: user-selected h1–h6 (stored in pluginData), default <p>.
+  // Validated against a whitelist so corrupt pluginData can never emit an
+  // arbitrary tag into the HTML.
+  var _tagOk  = { h1:1, h2:1, h3:1, h4:1, h5:1, h6:1, p:1 };
+  var textTag = (cfg.htmlTag && _tagOk[cfg.htmlTag]) ? cfg.htmlTag : 'p';
+
+  var _weightSet = false;
   if (node.fontName && node.fontName !== figma.mixed) {
     st.push("font-family:'" + escapeHtml(node.fontName.family) + "',Arial,sans-serif");
     var style  = node.fontName.style || '';
     var bold   = style.toLowerCase().indexOf('bold')   !== -1;
     var italic = style.toLowerCase().indexOf('italic') !== -1;
     st.push('font-weight:' + (bold ? 'bold' : 'normal'));
+    _weightSet = true;
     if (italic) st.push('font-style:italic');
+  }
+  // Heading tags default to bold in every client. When fontName is mixed the
+  // block above pushes no font-weight, which is fine for <p> (clients default
+  // to normal — matching current output) but would silently bold an h1–h6.
+  // Pin font-weight:normal so the rendered weight is identical to what the
+  // same layer produced as <p>; per-segment spans still override per run.
+  if (textTag !== 'p' && !_weightSet) {
+    st.push('font-weight:normal');
   }
 
   // When fills are mixed (per-character color), getTextColor returns #000000
   // as the base <p> colour.  buildSegmentedText will wrap each run that
   // differs from the base in a <span style="color:..."> so the per-character
   // colour is always honoured in the generated HTML.
-  var baseColor = getTextColor(node);
+  var _origTextColor = getTextColor(node);
+  // BLEND opt-in: a flagged text layer is forced to pure white — the black-bg
+  // screen/difference sandwich can only reconstruct white. Warn (build-time)
+  // if the designer flagged a non-white layer, since its colour will change.
+  var _blendOn = textBlendFlagged(node);
+  if (_blendOn && !isNearWhite(_origTextColor) && typeof console !== 'undefined' && console.warn) {
+    console.warn('[blend] "' + (node.name || 'text') + '" is flagged for blend but its colour (' +
+      _origTextColor + ') is not white; forcing #ffffff (blend only reconstructs pure white).');
+  }
+  var baseColor = _blendOn ? '#ffffff' : _origTextColor;
   st.push('color:' + baseColor);
 
   if (node.textAlignHorizontal) st.push('text-align:' + hAlign(node.textAlignHorizontal));
@@ -612,9 +856,18 @@ function renderText(node, cfg, d) {
   st.push('margin:0');
   st.push('padding:0');
 
-  // Use segmented rendering to capture per-run color / weight / size changes.
-  // Falls back to plain text for single-style nodes (no overhead).
-  var rawText = buildSegmentedText(node, baseColor, fs);
+  // Use segmented rendering to capture per-run color / weight / size changes,
+  // and to detect Figma bullet/numbered list formatting. Falls back to plain
+  // text for single-style, non-list nodes (no overhead).
+  var segResult    = buildSegmentedText(node, baseColor, fs);
+  var isListResult = !!(segResult && typeof segResult === 'object' && segResult.list);
+  var rawText      = isListResult ? '' : segResult;
+  // Strip trailing <br> tags that correspond to trailing \n characters in
+  // Figma. Email clients render trailing <br> inconsistently — some collapse
+  // them, some don't — so we remove them here and let the parent layout emit
+  // explicit spacer rows instead (see trailing-newline spacer in rows loop).
+  // (List blocks handle their own trailing-empty-line stripping.)
+  if (!isListResult) rawText = rawText.replace(/(<br>)+$/, '');
   // nowrap-lbl ensures the mobile media query does not strip white-space:nowrap
   // from short hug-text labels (dates, counters, etc.).
   // Wide hug text in mobile mode omits the class so @media can reset white-space.
@@ -622,17 +875,29 @@ function renderText(node, cfg, d) {
   // Build <p> class list — nowrap-lbl first (existing), then mobile override class if needed.
   var pClasses = [];
   if (isHugP) pClasses.push('nowrap-lbl');
-  if (cfg.mobileFontSize || cfg.mobileLineHeight) {
+  if (cfg.mobileFontSize || cfg.mobileLineHeight || cfg.mobileTextAlign) {
     var mc = mobClass(node.id);
     var mProps = [];
     if (cfg.mobileFontSize)   mProps.push('font-size:'   + parseInt(cfg.mobileFontSize,   10) + 'px !important');
     if (cfg.mobileLineHeight) mProps.push('line-height:' + parseInt(cfg.mobileLineHeight, 10) + 'px !important; mso-line-height-rule:exactly !important');
+    if (cfg.mobileTextAlign)  mProps.push('text-align:'  + cfg.mobileTextAlign + ' !important');
     _mobileCssRules.push('    .' + mc + ' { ' + mProps.join('; ') + '; }');
     pClasses.push(mc);
   }
-  var html = '<p' + (pClasses.length ? ' class="' + pClasses.join(' ') + '"' : '') + ' style="' + st.join(';') + '">' + rawText + '</p>';
+  var html = isListResult
+    ? renderListBlocks(segResult.blocks, textTag, st, pClasses, d)
+    : '<' + textTag + (pClasses.length ? ' class="' + pClasses.join(' ') + '"' : '') + ' style="' + st.join(';') + '">' + rawText + '</' + textTag + '>';
+  // BLEND: wrap the <p> ONLY (all-or-nothing) in the fixed screen/difference
+  // black-bg sandwich. Order is fixed: outer screen, inner difference. Lists /
+  // rich multi-block text are skipped (the pattern must wrap a single <p>).
+  if (_blendOn && !isListResult) {
+    html = '<div class="q-blend-screen"><div class="q-blend-difference">' + html + '</div></div>';
+    _blendUsed = true;
+  } else if (_blendOn && isListResult && typeof console !== 'undefined' && console.warn) {
+    console.warn('[blend] "' + (node.name || 'text') + '" is a list/rich-text block; blend wraps a single <p> only — skipped.');
+  }
   if (cfg.href) {
-    html = '<a href="' + escapeHtml(cfg.href) + '" target="_blank" style="color:inherit;text-decoration:none;">' + html + '</a>';
+    html = '<a href="' + escapeUrl(cfg.href) + '" target="_blank" style="color:inherit;text-decoration:none;">' + html + '</a>';
   }
 
   // layoutGrow=1               → fills PRIMARY axis (width when parent is HORIZONTAL).
@@ -668,7 +933,7 @@ function renderText(node, cfg, d) {
 
 // ── Render BUTTON ────────────────────────────────────────────
 function renderButton(node, cfg, d, parentAlign) {
-  var bg    = getSolidFill(node) || '#0066cc';
+  var bg    = getSolidFill(node);
   var pad   = getPad(node);
 
   // If the button frame has no padding itself, check if the first child frame
@@ -697,6 +962,15 @@ function renderButton(node, cfg, d, parentAlign) {
   // Corner radius: check node first, then inner child frame
   var rad = getCornerRadii(node);
   if (!rad.any && innerFrame) rad = getCornerRadii(innerFrame);
+
+  // Stroke/outline: check outer frame first, fall back to inner child frame
+  var btnStroke = getStroke(node);
+  if (!btnStroke && innerFrame) btnStroke = getStroke(innerFrame);
+
+  // For a plain filled button with no stroke, keep the legacy blue default.
+  // Skip the fallback when the user explicitly cleared all fills (text-only button).
+  var fillsExplicitlyEmpty = node.fills && node.fills !== figma.mixed && node.fills.length === 0;
+  if (!bg && !btnStroke && !fillsExplicitlyEmpty) bg = '#0066cc';
 
   var btnW = Math.round(node.width);
   var btnH = Math.round(node.height);
@@ -737,23 +1011,54 @@ function renderButton(node, cfg, d, parentAlign) {
   }
 
   var tAlign = (tn && tn.textAlignHorizontal) ? hAlign(tn.textAlignHorizontal) : 'center';
-  var href   = escapeHtml(cfg.href || '#');
+  var href   = escapeUrl(cfg.href || '#');
   // VML arcsize uses the largest corner value against the shorter dimension
   var arcPct = btnH > 0 ? Math.min(100, Math.round((rad.maxVal / (btnH / 2)) * 100)) : 0;
 
   // Per-corner border-radius for the <a> tag (modern clients)
   var radCSS = rad.any ? rad.css : '';
 
-  var aStyle = 'display:inline-block;white-space:nowrap;background-color:' + bg + ';color:' + tColor +
+  // Mobile overrides for the button <a> tag.
+  //   Font-size / line-height — stored on the TEXT node inside the button
+  //     (user selects the text layer and sets them in the mobile panel).
+  //   Padding — stored on the button FRAME itself (set in the button panel).
+  // All overrides are emitted as a single @media !important class on the <a>
+  // tag, which beats the inline padding/font-size on mobile clients.
+  // VML (Outlook) is unaffected — it never runs @media rules.
+  var tnCfg = tn ? parseNodeConfig(tn) : null;
+  var btnMobFontSize   = (tnCfg && tnCfg.mobileFontSize)  || '';
+  var btnMobLineHeight = (tnCfg && tnCfg.mobileLineHeight) || '';
+  var hasMobPad = cfg.mobilePadTop !== '' || cfg.mobilePadRight !== '' ||
+                  cfg.mobilePadBottom !== '' || cfg.mobilePadLeft !== '';
+  var btnMobClass = '';
+  if (btnMobFontSize || btnMobLineHeight || hasMobPad) {
+    btnMobClass = mobClass(node.id);
+    var btnMProps = [];
+    if (btnMobFontSize)   btnMProps.push('font-size:'   + parseInt(btnMobFontSize,   10) + 'px !important');
+    if (btnMobLineHeight) btnMProps.push('line-height:' + parseInt(btnMobLineHeight, 10) + 'px !important');
+    if (hasMobPad) {
+      var bmpt = cfg.mobilePadTop    !== '' ? parseInt(cfg.mobilePadTop,    10) : pad.t;
+      var bmpr = cfg.mobilePadRight  !== '' ? parseInt(cfg.mobilePadRight,  10) : pad.r;
+      var bmpb = cfg.mobilePadBottom !== '' ? parseInt(cfg.mobilePadBottom, 10) : pad.b;
+      var bmpl = cfg.mobilePadLeft   !== '' ? parseInt(cfg.mobilePadLeft,   10) : pad.l;
+      btnMProps.push('padding:' + bmpt + 'px ' + bmpr + 'px ' + bmpb + 'px ' + bmpl + 'px !important');
+    }
+    _mobileCssRules.push('    .' + btnMobClass + ' { ' + btnMProps.join('; ') + '; }');
+  }
+
+  var aDisplay = (isFill || isMobileFluidBtn) ? 'display:block;width:100%;box-sizing:border-box;' : 'display:block;width:100%;box-sizing:border-box;';
+  var aStyle = aDisplay + 'white-space:nowrap;background-color:' + (bg || 'transparent') + ';color:' + tColor +
     ';text-decoration:none;font-family:' + tFont + ';font-size:' + tSize +
     'px;font-weight:' + tWeight + ';padding:' + btnP + ';' +
-    radCSS + 'mso-padding-alt:0;text-align:' + tAlign + ';-webkit-text-size-adjust:none;';
+    radCSS + (btnStroke ? btnStroke.css : '') + 'mso-padding-alt:0;text-align:' + tAlign + ';-webkit-text-size-adjust:none;';
 
   var vml = '<!--[if mso]>' +
     '<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"' +
     ' href="' + href + '"' +
     ' style="' + vmlWidthStyle + '"' +
-    ' arcsize="' + arcPct + '%" stroke="f" fillcolor="' + bg + '">' +
+    ' arcsize="' + arcPct + '%"' +
+    (btnStroke ? ' stroke="t" strokecolor="' + btnStroke.color + '" strokeweight="' + btnStroke.weight + 'px"' : ' stroke="f"') +
+    (bg ? ' fillcolor="' + bg + '"' : ' filled="f"') + '>' +
     '<w:anchorlock/>' +
     '<center style="white-space:nowrap;color:' + tColor + ';font-family:' + tFont + ';font-size:' + tSize + 'px;font-weight:' + tWeight + ';padding:' + btnP + ';">' + label + '</center>' +
     '</v:roundrect><![endif]-->';
@@ -768,11 +1073,11 @@ function renderButton(node, cfg, d, parentAlign) {
   return ind(d) + '<table cellpadding="0" cellspacing="0" border="0" role="presentation"' +
     fwmClass + tblAttrs + ' style="' + tblStyle + '">\n' +
     ind(d+1) + '<tr>\n' +
-    ind(d+2) + '<td align="' + tAlign + '" bgcolor="' + bg + '"' +
-    ' style="' + tdRadCSS + 'overflow:hidden;background-color:' + bg + ';mso-line-height-rule:exactly;">\n' +
+    ind(d+2) + '<td align="' + tAlign + '"' + (bg ? ' bgcolor="' + bg + '"' : '') +
+    ' style="' + tdRadCSS + (bg ? 'background-color:' + bg + ';' : '') + 'mso-line-height-rule:exactly;">\n' +
     ind(d+3) + vml + '\n' +
     ind(d+3) + '<!--[if !mso]><!-->\n' +
-    ind(d+3) + '<a href="' + href + '" target="_blank" style="' + aStyle + '">' + label + '</a>\n' +
+    ind(d+3) + '<a href="' + href + '" target="_blank"' + (btnMobClass ? ' class="' + btnMobClass + '"' : '') + ' style="' + aStyle + '">' + label + '</a>\n' +
     ind(d+3) + '<!--<![endif]-->\n' +
     ind(d+2) + '</td>\n' +
     ind(d+1) + '</tr>\n' +
@@ -813,13 +1118,16 @@ function renderDivider(node, cfg, d) {
 //   Outlook (MSO):  VML roundrect with padding in the <td>
 //
 // border-collapse:separate is required for border-radius on <table> to work.
-function roundedWrapper(bg, pad, rad, innerHtml, d, nested) {
+// mobCls — optional CSS class string to stamp on the padding-carrying <td>
+// so that @media mobile-override rules can change padding/alignment on mobile.
+function roundedWrapper(bg, pad, rad, innerHtml, d, nested, mobCls, nodeW, nodeH) {
+  var _mc = mobCls ? ' class="' + mobCls + '"' : '';
   if (!rad || !rad.any) {
     var plainStyle = (bg || '') + (pad || '');
     if (!plainStyle) return innerHtml;
     return ind(d) + '<table cellpadding="0" cellspacing="0" border="0" role="presentation" width="100%">\n' +
       ind(d+1) + '<tr>\n' +
-      ind(d+2) + '<td' + (bg ? ' bgcolor="' + bg.replace('background-color:', '').replace(';','').trim() + '"' : '') +
+      ind(d+2) + '<td' + _mc + (bg ? ' bgcolor="' + bg.replace('background-color:', '').replace(';','').trim() + '"' : '') +
       (plainStyle ? ' style="' + plainStyle + '"' : '') + '>\n' +
       innerHtml + '\n' +
       ind(d+2) + '</td>\n' +
@@ -847,6 +1155,51 @@ function roundedWrapper(bg, pad, rad, innerHtml, d, nested) {
 
   // CSS-only path: nested frames or transparent bg (no VML).
   if (nested || isTransparent) {
+    // msoSafeInner: a version of innerHtml safe to embed inside <!--[if mso]>.
+    //
+    // Two conditional-comment types must be neutralised:
+    //
+    //   <!--[if !mso]><!--> ... <!--<![endif]-->
+    //     Non-MSO block — visible to browsers, hidden from Outlook.
+    //     The embedded --> inside <!--<![endif]--> would prematurely close the
+    //     outer MSO HTML comment for browsers, leaking duplicate content.
+    //     These blocks are removed entirely (Outlook must never see the
+    //     CSS-only alternative rendering that lives inside them).
+    //
+    //   <!--[if mso]> ... <![endif]-->
+    //     Nested MSO block — unwrap it (keep content, discard markers) since
+    //     we are already inside an Outlook-only conditional block.
+    //
+    // WHY INNERMOST-FIRST MATTERS
+    // Non-MSO blocks can nest arbitrarily: e.g. a rounded section (bg-image)
+    // wraps a rounded child section, which contains a button — each layer
+    // produces its own <!--[if !mso]><!-->/<!--<![endif]--> pair.
+    //
+    // A plain non-greedy regex ([\s\S]*?) mis-pairs the markers: it matches
+    // the outermost OPEN to the first (innermost) CLOSE it encounters, then
+    // exits — leaving the outer CLOSE orphaned inside the MSO block.  That
+    // orphan's --> still closes the browser HTML comment, so the leak remains.
+    //
+    // The regex below uses a negative lookahead to enforce innermost-first
+    // matching: it only matches a non-MSO open/close pair whose interior
+    // contains no further open markers.  Iterating until the string stops
+    // changing peels one nesting level per pass — correct at any depth.
+    // A final sweep removes any orphaned close markers that could not be
+    // paired (guards against malformed input).
+    var msoSafeInner = innerHtml;
+    var _msiPrev;
+    do {
+      _msiPrev = msoSafeInner;
+      // Innermost non-MSO block: interior must contain no nested open marker.
+      msoSafeInner = msoSafeInner
+        .replace(/<!--\[if !mso\]><!-->((?!<!--\[if !mso\]><!-->)[\s\S])*<!--<!\[endif\]-->/g, '');
+      // Innermost MSO block: non-greedy naturally finds innermost first.
+      msoSafeInner = msoSafeInner
+        .replace(/<!--\[if mso\]>([\s\S]*?)<!\[endif\]-->/g, '$1');
+    } while (msoSafeInner !== _msiPrev);
+    // Safety: remove any orphaned non-MSO close markers left by malformed input.
+    msoSafeInner = msoSafeInner.replace(/<!--<!\[endif\]-->/g, '');
+
     // Pure visual clip (transparent + no padding) — just add radius to table.
     if (isTransparent && !padVal) {
       return ind(d) + '<!--[if !mso]><!-->\n' +
@@ -859,7 +1212,7 @@ function roundedWrapper(bg, pad, rad, innerHtml, d, nested) {
         ind(d) + '</table>\n' +
         ind(d) + '<!--<![endif]-->\n' +
         ind(d) + '<!--[if mso]>\n' +
-        innerHtml + '\n' +
+        msoSafeInner + '\n' +
         ind(d) + '<![endif]-->';
     }
 
@@ -869,7 +1222,7 @@ function roundedWrapper(bg, pad, rad, innerHtml, d, nested) {
     return ind(d) + '<!--[if !mso]><!-->\n' +
       ind(d) + '<table cellpadding="0" cellspacing="0" border="0" role="presentation" width="100%" style="' + tblRadStyle + '">\n' +
       ind(d+1) + '<tr>\n' +
-      ind(d+2) + '<td' + tdBgAttr + (tdStyle ? ' style="' + tdStyle + '"' : '') + '>\n' +
+      ind(d+2) + '<td' + _mc + tdBgAttr + (tdStyle ? ' style="' + tdStyle + '"' : '') + '>\n' +
       innerHtml + '\n' +
       ind(d+2) + '</td>\n' +
       ind(d+1) + '</tr>\n' +
@@ -878,8 +1231,8 @@ function roundedWrapper(bg, pad, rad, innerHtml, d, nested) {
       ind(d) + '<!--[if mso]>\n' +
       ind(d) + '<table cellpadding="0" cellspacing="0" border="0" role="presentation" width="100%">\n' +
       ind(d+1) + '<tr>\n' +
-      ind(d+2) + '<td' + tdBgAttr + (tdStyle ? ' style="' + tdStyle + '"' : '') + '>\n' +
-      innerHtml + '\n' +
+      ind(d+2) + '<td' + _mc + tdBgAttr + (tdStyle ? ' style="' + tdStyle + '"' : '') + '>\n' +
+      msoSafeInner + '\n' +
       ind(d+2) + '</td>\n' +
       ind(d+1) + '</tr>\n' +
       ind(d) + '</table>\n' +
@@ -895,7 +1248,13 @@ function roundedWrapper(bg, pad, rad, innerHtml, d, nested) {
   //   VML wrapper <td> carries the padding for Outlook only.
   //   Modern clients see the outer <td> padding (mso-padding-alt is ignored)
   //   and never see the VML wrapper (hidden by conditional comments).
-  var arcPct = Math.min(50, Math.round(rad.maxVal * 2));
+  // arcsize = (cornerRadius / halfShortestSide) * 100.
+  // When node dimensions are provided (preferred), compute exactly as renderButton does.
+  // Fall back to the legacy heuristic only if dimensions are unknown.
+  var _arcShorter = (nodeW > 0 && nodeH > 0) ? Math.min(nodeW, nodeH) : 0;
+  var arcPct = _arcShorter > 0
+    ? Math.min(100, Math.round((rad.maxVal / (_arcShorter / 2)) * 100))
+    : Math.min(50, Math.round(rad.maxVal * 2));
 
   var vmlOpen  = '<!--[if mso]>' +
     '<table cellpadding="0" cellspacing="0" border="0" role="presentation" width="100%"><tr><td' +
@@ -917,7 +1276,7 @@ function roundedWrapper(bg, pad, rad, innerHtml, d, nested) {
   return ind(d) + '<table cellpadding="0" cellspacing="0" border="0" role="presentation" width="100%"\n' +
     ind(d) + '       style="' + tblRadStyle + '">\n' +
     ind(d+1) + '<tr>\n' +
-    ind(d+2) + '<td' + tdBgAttr + (outerTdStyle ? ' style="' + outerTdStyle + '"' : '') + '>\n' +
+    ind(d+2) + '<td' + _mc + tdBgAttr + (outerTdStyle ? ' style="' + outerTdStyle + '"' : '') + '>\n' +
     ind(d+3) + vmlOpen + '\n' +
     innerHtml + '\n' +
     ind(d+3) + vmlClose + '\n' +
@@ -946,10 +1305,18 @@ function borderWrapper(stroke, innerHtml, d, w, rad) {
   var wStyle = (w && w > 0) ? 'width:' + w + 'px;max-width:' + w + 'px;margin:0 auto;' : 'width:100%;';
 
   if (stroke.perSide) {
+    // When a border-radius is also present, border-collapse:separate is required
+    // for the radius to render on the table (the global CSS sets border-collapse:collapse).
+    // border-spacing:0 prevents any cell gaps that separate normally introduces.
+    // The <td> gets innerRadStyle (= radStyle + overflow:hidden) instead of bare
+    // radStyle so inner content is clipped to the rounded corners, matching the
+    // behaviour of the non-perSide branch.
+    var perSideTableStyle = wStyle + (hasRad ? 'border-collapse:separate;border-spacing:0;' : '') + radStyle;
+    var perSideTdStyle    = 'padding:0;' + (hasRad ? innerRadStyle : radStyle) + stroke.css;
     return ind(d) + '<table cellpadding="0" cellspacing="0" border="0" role="presentation"' + wAttr + '\n' +
-      ind(d) + '       style="' + wStyle + radStyle + '">\n' +
+      ind(d) + '       style="' + perSideTableStyle + '">\n' +
       ind(d+1) + '<tr>\n' +
-      ind(d+2) + '<td style="padding:0;' + radStyle + stroke.css + '">\n' +
+      ind(d+2) + '<td style="' + perSideTdStyle + '">\n' +
       innerHtml + '\n' +
       ind(d+2) + '</td>\n' +
       ind(d+1) + '</tr>\n' +
@@ -972,6 +1339,74 @@ function spacer(px, d) {
   return ind(d) + '<tr><td height="' + px + '" style="height:' + px + 'px;font-size:0;line-height:0;">&nbsp;</td></tr>\n';
 }
 
+// ── Visibility-aware gap helpers ─────────────────────────────
+// A gap between two auto-layout children must only be visible on a device when
+// BOTH its neighbours are visible on that device — exactly like Figma: hiding a
+// node collapses its gap contribution so no phantom space is left behind.
+//
+//   v1, v2  —  '' | 'mobile' | 'desktop'  (from parseNodeConfig .visibility)
+// Returns    'always' | 'desktop' | 'mobile' | 'never'
+function gapVisibility(v1, v2) {
+  if (!v1 && !v2) return 'always';
+  // Opposing visibility: they can never both be on screen simultaneously → no gap.
+  if ((v1 === 'mobile' && v2 === 'desktop') ||
+      (v1 === 'desktop' && v2 === 'mobile')) return 'never';
+  if (v1 === 'mobile' || v2 === 'mobile') return 'mobile';
+  if (v1 === 'desktop' || v2 === 'desktop') return 'desktop';
+  return 'always';
+}
+
+// Emits a VERTICAL gap <tr> row conditioned on gapVis.
+//
+//   'always'  → unchanged: plain spacer row visible everywhere.
+//   'desktop' → gap row gets class="gap-dt"; the @media rule collapses it to
+//               height:0 on mobile. Outlook sees height="N" attribute (correct).
+//   'mobile'  → gap row is wrapped in <!--[if !mso]> so Outlook never sees it;
+//               its inline style defaults to height:0; a per-height rule pushed
+//               to _mobileCssRules reveals the correct height at mobile widths.
+//   'never'   → returns '' (gap omitted entirely).
+// mobileGapOverride: null  → no override (mobile gap = desktop gap)
+//                    number → override gap height on mobile to this value (0 = remove gap)
+function emitVerticalGap(px, gapVis, d, mobileGapOverride) {
+  if (!px || px <= 0 || gapVis === 'never') return '';
+
+  if (gapVis === 'always') {
+    // Mobile gap override: add a class that changes the height at mobile widths.
+    var hasMobOv = (mobileGapOverride !== null && mobileGapOverride !== undefined && mobileGapOverride !== px);
+    if (hasMobOv) {
+      var ovCls = 'gap-mob-ov-' + mobileGapOverride;
+      if (!_mobileGapClassSeen[ovCls]) {
+        _mobileGapClassSeen[ovCls] = true;
+        if (mobileGapOverride <= 0) {
+          _mobileCssRules.push('    .' + ovCls + ' { height:0 !important; max-height:0 !important; overflow:hidden !important; font-size:0 !important; line-height:0 !important; }');
+        } else {
+          _mobileCssRules.push('    .' + ovCls + ' { height:' + mobileGapOverride + 'px !important; max-height:none !important; overflow:visible !important; }');
+        }
+      }
+      return ind(d) + '<tr><td class="' + ovCls + '" height="' + px + '" style="height:' + px + 'px;font-size:0;line-height:0;">&nbsp;</td></tr>\n';
+    }
+    return ind(d) + '<tr><td height="' + px + '" style="height:' + px + 'px;font-size:0;line-height:0;">&nbsp;</td></tr>\n';
+  }
+
+  if (gapVis === 'desktop') {
+    // Desktop-only gap: .gap-dt hides it on mobile. Mobile override irrelevant.
+    return ind(d) + '<tr><td class="gap-dt" height="' + px + '" style="height:' + px + 'px;font-size:0;line-height:0;">&nbsp;</td></tr>\n';
+  }
+
+  // gapVis === 'mobile': invisible in Outlook and on desktop; revealed via @media.
+  // If mobileGapOverride is set, use that height instead of px.
+  var effectivePx = (mobileGapOverride !== null && mobileGapOverride !== undefined) ? mobileGapOverride : px;
+  if (effectivePx <= 0) return ''; // override to 0 on a mobile-only gap — omit entirely
+  var cls = 'gap-mb-' + effectivePx;
+  if (!_mobileGapClassSeen[cls]) {
+    _mobileGapClassSeen[cls] = true;
+    _mobileCssRules.push('    .' + cls + ' { height:' + effectivePx + 'px !important; max-height:none !important; overflow:visible !important; }');
+  }
+  return ind(d) + '<!--[if !mso]><!-->\n' +
+    ind(d) + '<tr><td class="' + cls + '" height="0" style="height:0;max-height:0;overflow:hidden;font-size:0;line-height:0;">&nbsp;</td></tr>\n' +
+    ind(d) + '<!--<![endif]-->\n';
+}
+
 // ── SPACE BETWEEN renderer (Figma AUTO gap) ──────────────────
 // All children are rendered as independent cells in a single table row.
 // First child gets align="left", last gets align="right", middle ones
@@ -992,8 +1427,36 @@ function renderSpaceBetween(node, d, insideRounded) {
   var nodeW  = Math.round(node.width);
   var isFill = (node.layoutGrow === 1) || (node.layoutSizingHorizontal === 'FILL');
 
+  // BG image: suppress fill so the bg-image wrapper in renderNode can show through
+  var _sbSpCfg = parseNodeConfig(node);
+  if (_sbSpCfg.bgImgOn && _sbSpCfg.bgImgSrc) { bg = null; }
+
   var bgS  = bg ? 'background-color:' + bg + ';' : '';
   var padS = padCSS(pad);
+
+  // Mobile padding / alignment overrides for the outer wrapper of this frame.
+  var sbMobCls = '';
+  if (_sbSpCfg.mobileAlign) {
+    var sbAlignCls = mobClass(node.id) + '-al';
+    var _sbImgMargin = _sbSpCfg.mobileAlign === 'center' ? 'margin: 0 auto'
+                     : _sbSpCfg.mobileAlign === 'right'  ? 'margin-left: auto; margin-right: 0'
+                                                         : 'margin-right: auto; margin-left: 0';
+    _mobileCssRules.push(
+      '    .' + sbAlignCls + ',\n    .' + sbAlignCls + ' td { text-align: ' + _sbSpCfg.mobileAlign + ' !important; }\n' +
+      '    .' + sbAlignCls + ' img { display: block !important; ' + _sbImgMargin + ' !important; }'
+    );
+    sbMobCls = sbAlignCls;
+  }
+  var sbHasMobPad = _sbSpCfg.mobilePadTop !== '' || _sbSpCfg.mobilePadRight !== '' || _sbSpCfg.mobilePadBottom !== '' || _sbSpCfg.mobilePadLeft !== '';
+  if (sbHasMobPad) {
+    var sbPadCls = mobClass(node.id) + '-pd';
+    var smpt = _sbSpCfg.mobilePadTop    !== '' ? parseInt(_sbSpCfg.mobilePadTop,    10) : pad.t;
+    var smpr = _sbSpCfg.mobilePadRight  !== '' ? parseInt(_sbSpCfg.mobilePadRight,  10) : pad.r;
+    var smpb = _sbSpCfg.mobilePadBottom !== '' ? parseInt(_sbSpCfg.mobilePadBottom, 10) : pad.b;
+    var smpl = _sbSpCfg.mobilePadLeft   !== '' ? parseInt(_sbSpCfg.mobilePadLeft,   10) : pad.l;
+    _mobileCssRules.push('    .' + sbPadCls + ' { padding: ' + smpt + 'px ' + smpr + 'px ' + smpb + 'px ' + smpl + 'px !important; }');
+    sbMobCls = sbMobCls ? sbMobCls + ' ' + sbPadCls : sbPadCls;
+  }
 
   // Build cells — each child is its own <td>.
   //
@@ -1061,7 +1524,23 @@ function renderSpaceBetween(node, d, insideRounded) {
     // For 3+ child space-between: mark FILL children so the media query can
     // override their width to auto (absorbs remaining space under table-layout:fixed).
     // For 2-child: the last TD has no width — it naturally fills remaining space.
-    var sbFillClass = (kids.length > 2 && kidIsFill && kidW) ? ' class="fill-col"' : '';
+    var sbTdClasses = [];
+    if (kids.length > 2 && kidIsFill && kidW) sbTdClasses.push('fill-col');
+    // Column visibility conditioning — same logic as regular horizontal layout.
+    // Space-between has no gap TDs, but hidden columns still claim their declared
+    // width, so we must collapse them to 0 on the device where they are hidden.
+    var sbKidVis = getTag(kid.name || '', 'visibility') || '';
+    if (sbKidVis === 'desktop') {
+      sbTdClasses.push('col-dt-hide');
+    } else if (sbKidVis === 'mobile') {
+      var _sbColMbCls = mobClass(kid.id) + '-col';
+      var _sbColMbW   = kidW > 0 ? kidW : Math.round(kid.width);
+      _mobileCssRules.push('    .' + _sbColMbCls + ' { width:' + _sbColMbW + 'px !important; max-width:' + _sbColMbW + 'px !important; overflow:visible !important; }');
+      sbTdClasses.push(_sbColMbCls);
+      tdWAttr = ' width="0"';
+      tdWSty  = 'width:0;max-width:0;overflow:hidden;padding:0;font-size:0;line-height:0;mso-hide:all;';
+    }
+    var sbFillClass = sbTdClasses.length ? ' class="' + sbTdClasses.join(' ') + '"' : '';
     cells += ind(d+2) + '<td' + tdWAttr + sbFillClass + ' align="' + cellAlign + '" valign="' + vAlign + '" style="' + tdWSty + 'text-align:' + cellAlign + ';vertical-align:' + vAlign + ';">\n' +
       kidHtml + '\n' +
       ind(d+2) + '</td>\n';
@@ -1084,19 +1563,21 @@ function renderSpaceBetween(node, d, insideRounded) {
 
   var block;
   if (rad.any && !stroke) {
-    block = roundedWrapper(bgS, padS, rad, innerTbl, d, insideRounded);
+    block = roundedWrapper(bgS, padS, rad, innerTbl, d, insideRounded, sbMobCls, nodeW, Math.round(node.height));
   } else if (rad.any && stroke) {
+    var sbRSMobCls = sbMobCls ? ' class="' + sbMobCls + '"' : '';
     var radContent = (bgS || padS)
       ? ind(d) + '<table cellpadding="0" cellspacing="0" border="0" role="presentation"' + outerWAttr + ' style="' + outerWSty + '">\n' +
-        ind(d+1) + '<tr><td' + (bg ? ' bgcolor="' + bg + '"' : '') + (outerStyle ? ' style="' + outerStyle + '"' : '') + '>\n' +
+        ind(d+1) + '<tr><td' + sbRSMobCls + (bg ? ' bgcolor="' + bg + '"' : '') + (outerStyle ? ' style="' + outerStyle + '"' : '') + '>\n' +
         innerTbl + '\n' +
         ind(d+1) + '</td></tr>\n' +
         ind(d) + '</table>'
       : innerTbl;
     block = borderWrapper(stroke, radContent, d, useFixedW ? nodeW : 0, rad);
-  } else if (outerStyle) {
+  } else if (outerStyle || sbMobCls) {
+    var sbOuterTdCls = sbMobCls ? ' class="' + sbMobCls + '"' : '';
     block = ind(d) + '<table cellpadding="0" cellspacing="0" border="0" role="presentation"' + outerWAttr + ' style="' + outerWSty + '">\n' +
-      ind(d+1) + '<tr><td' + (bg ? ' bgcolor="' + bg + '"' : '') + ' style="' + outerStyle + '">\n' +
+      ind(d+1) + '<tr><td' + sbOuterTdCls + (bg ? ' bgcolor="' + bg + '"' : '') + (outerStyle ? ' style="' + outerStyle + '"' : '') + '>\n' +
       innerTbl + '\n' +
       ind(d+1) + '</td></tr>\n' +
       ind(d) + '</table>';
@@ -1152,6 +1633,12 @@ function _innerRenderNode(node, cfg, d, insideRounded, parentCellAlign) {
   var g      = gap(node);
   var rad    = getCornerRadii(node);
   var stroke = getStroke(node);
+
+  // BG image: suppress the node's own solid fill from inner rendering.
+  // The outer renderNode wrapper will apply bg-image + fill-as-fallback on
+  // its own <td>, so the inner tables must be transparent (no bgcolor) to
+  // let the background image show through.
+  if (cfg.bgImgOn && cfg.bgImgSrc) { bg = null; }
 
   var nodeW     = Math.round(node.width);
   // layoutGrow=1         → fills primary axis (width when parent is HORIZONTAL).
@@ -1210,16 +1697,19 @@ function _innerRenderNode(node, cfg, d, insideRounded, parentCellAlign) {
       fillShare = Math.floor((innerW - fixedTotal - totalSpacers) / fillCount);
     }
 
-    // ALL-FILL PERCENTAGE MODE: when every child is FILL (no fixed-width children),
-    // use percentage-based TD widths instead of pixel widths with the fill-col class.
-    // Why: Gmail iOS ignores @media queries and applies the u+#body .fill-col rule
-    // which sets width:auto!important. When ALL cells are width:auto, auto table
-    // layout distributes space based on content length — "A) Tax-loss harvesting"
-    // gets much more width than "C) Both", breaking 2×2 quiz grids.
-    // Percentage widths (e.g. width="50%") are honoured by ALL email clients
-    // including Gmail iOS, producing even column distribution like BeeFree does.
-    // This mode is ONLY used when fillCount === kids.length (all children are FILL);
-    // mixed fixed+fill layouts still use the pixel-width + fill-col approach.
+    // ALL-FILL mode: every child is FILL (no fixed-width children).
+    // These layouts get two special treatments further below:
+    //   1. fill-col class is emitted on every fill TD (not gated by omitTdW alone)
+    //      so that the u+#body and @media .fill-col{width:auto} rules fire correctly.
+    //   2. table-layout:fixed is added to the cells table so desktop email clients
+    //      honour the declared pixel (fillShare) column widths and gap TDs receive
+    //      their full pixel allocation. Without fixed layout, auto table layout either
+    //      collapses gap TDs (old percentage approach: 50%+50%+gapPx > 100%) or lets
+    //      min-content-width expand a column beyond its designed share (long nowrap
+    //      text overriding the declared width). Both desktop bugs are fixed by fixed
+    //      layout without harming Gmail iOS: fixed layout + u+#body fill-col:auto
+    //      distributes auto-width columns equally after honouring gap TDs — exactly
+    //      the correct equal-column semantic.
     var allFillPctMode = (fillCount === kids.length && kids.length > 1);
 
     // stretchLastW: only useful when the parent has a KNOWN fixed pixel width.
@@ -1317,15 +1807,8 @@ function _innerRenderNode(node, cfg, d, insideRounded, parentCellAlign) {
       // a 45px icon+counter frame).
       var hugTxtOmit = kidIsHugTxt && parentIsFluidHz && !isLastKid;
       var omitTdW    = hugTxtOmit || kidIsFluidInMobile;
-      // ALL-FILL PERCENTAGE MODE: use percentage width instead of pixel width
       var kidWAttr, kidWStyle;
-      if (allFillPctMode) {
-        var pct = Math.floor(100 / kids.length);
-        // Last child gets the remainder to total 100%
-        if (ci === lastNonSpacerIdx) pct = 100 - (Math.floor(100 / kids.length) * (kids.length - 1));
-        kidWAttr  = ' width="' + pct + '%"';
-        kidWStyle = 'width:' + pct + '%;';
-      } else if (omitTdW) {
+      if (omitTdW) {
         kidWAttr  = '';
         kidWStyle = '';
       } else {
@@ -1344,10 +1827,40 @@ function _innerRenderNode(node, cfg, d, insideRounded, parentCellAlign) {
       // strip their white-space:nowrap — short labels like "943" or "5 days ago"
       // must never word-wrap inside their tight columns.
       var tdClasses = [];
-      if (kidIsFillCol && !omitTdW && !allFillPctMode) tdClasses.push('fill-col');
+      if (kidIsFillCol && !omitTdW) tdClasses.push('fill-col');
       if (kidIsHugTxt) tdClasses.push('nowrap-lbl');
       // Mobile stack-vertical: each content cell stacks as a block on mobile.
       if (cfg.mobileStack === 'vertical') tdClasses.push('stack-column');
+
+      // ── Column visibility conditioning ─────────────────────────────────────
+      // display:none on a <div> inside a <td> hides the content but the <td>
+      // still occupies its declared column width in the table layout — email
+      // clients do not collapse hidden <div> children to 0 column width.
+      // We fix this at the <td> level:
+      //
+      //   visibility=desktop → add col-dt-hide; @media collapses width to 0
+      //                        on mobile.  Outlook/desktop see the full width
+      //                        via the unchanged width attribute (correct).
+      //
+      //   visibility=mobile  → override width to 0 + mso-hide:all so the
+      //                        column takes no space by default (desktop +
+      //                        Outlook).  A per-node @media rule restores the
+      //                        correct pixel width on mobile.
+      var kidVis = getTag(kid.name || '', 'visibility') || '';
+      if (kidVis === 'desktop') {
+        tdClasses.push('col-dt-hide');
+      } else if (kidVis === 'mobile') {
+        var _colMbCls = mobClass(kid.id) + '-col';
+        var _colMbW   = kidW > 0 ? kidW : Math.round(kid.width);
+        _mobileCssRules.push('    .' + _colMbCls + ' { width:' + _colMbW + 'px !important; max-width:' + _colMbW + 'px !important; overflow:visible !important; }');
+        tdClasses.push(_colMbCls);
+        // Override the width attributes so the column is invisible by default.
+        // tdStyle is rebuilt here to incorporate the overridden kidWStyle.
+        kidWAttr  = ' width="0"';
+        kidWStyle = 'width:0;max-width:0;overflow:hidden;padding:0;font-size:0;line-height:0;mso-hide:all;';
+        tdStyle   = kidWStyle + 'vertical-align:' + vAlign + ';text-align:' + kidHAlign + ';' + (kidIsHugTxt ? 'white-space:nowrap;' : '');
+      }
+
       var fillColClass = tdClasses.length > 0 ? ' class="' + tdClasses.join(' ') + '"' : '';
 
       // Pass kidHAlign as parentCellAlign so the child's inner table wrapper
@@ -1364,9 +1877,84 @@ function _innerRenderNode(node, cfg, d, insideRounded, parentCellAlign) {
       if (ci < kids.length - 1) {
         var gapW = isSpaceBetween ? autoGapW : g;
         if (gapW > 0) {
-          // Gap cell also gets stack-column so it becomes a vertical spacer when stacking.
-          var gapCls = cfg.mobileStack === 'vertical' ? ' class="stack-column"' : '';
-          cells += ind(d+2) + '<td' + gapCls + ' width="' + gapW + '" style="width:' + gapW + 'px;font-size:0;line-height:0;">&nbsp;</td>\n';
+          // Gap cell visibility: AND of current column's visibility and next
+          // column's visibility — a gap only appears when both neighbours do.
+          var _nextColVis  = getTag((kids[ci + 1].name || ''), 'visibility') || '';
+          var _hzGapVis    = gapVisibility(kidVis, _nextColVis);
+          // Mobile gap override: when set, replaces the desktop gap value on mobile.
+          var _hzIsStacking = (cfg.mobileStack === 'vertical');
+          var _hzMobGapPx   = cfg.mobileGap !== '' ? parseInt(cfg.mobileGap, 10) : null;
+
+          if (_hzGapVis !== 'never') {
+            // Base classes: stack-column carries over if mobileStack is set.
+            var _hzGapClasses = _hzIsStacking ? ['stack-column'] : [];
+
+            if (_hzGapVis === 'desktop') {
+              // Desktop-only gap: .gap-dt collapses it on mobile. No mobile override needed.
+              _hzGapClasses.push('gap-dt');
+              var _hzGapDtCls = _hzGapClasses.length ? ' class="' + _hzGapClasses.join(' ') + '"' : '';
+              cells += ind(d+2) + '<td' + _hzGapDtCls + ' width="' + gapW + '" style="width:' + gapW + 'px;font-size:0;line-height:0;">&nbsp;</td>\n';
+            } else if (_hzGapVis === 'mobile') {
+              // Mobile-only gap: hidden on desktop/Outlook, revealed via @media.
+              // Use mobileGap override value if set.
+              var _hzEffGapW = (_hzMobGapPx !== null) ? _hzMobGapPx : gapW;
+              if (_hzEffGapW > 0) {
+                var _hzGapMbCls;
+                if (_hzIsStacking) {
+                  // Stacking: gap TD is display:block — use height for vertical spacing.
+                  _hzGapMbCls = 'gap-mb-stack-' + _hzEffGapW;
+                  if (!_mobileGapClassSeen[_hzGapMbCls]) {
+                    _mobileGapClassSeen[_hzGapMbCls] = true;
+                    _mobileCssRules.push('    .' + _hzGapMbCls + ' { height:' + _hzEffGapW + 'px !important; min-height:' + _hzEffGapW + 'px !important; overflow:visible !important; font-size:0 !important; line-height:0 !important; }');
+                  }
+                } else {
+                  // Not stacking: restore column gap width.
+                  _hzGapMbCls = 'gap-mb-hz-' + _hzEffGapW;
+                  if (!_mobileGapClassSeen[_hzGapMbCls]) {
+                    _mobileGapClassSeen[_hzGapMbCls] = true;
+                    _mobileCssRules.push('    .' + _hzGapMbCls + ' { width:' + _hzEffGapW + 'px !important; max-width:' + _hzEffGapW + 'px !important; overflow:visible !important; font-size:0 !important; line-height:0 !important; }');
+                  }
+                }
+                _hzGapClasses.push(_hzGapMbCls);
+                var _hzGapMbClsAttr = _hzGapClasses.length ? ' class="' + _hzGapClasses.join(' ') + '"' : '';
+                cells += ind(d+2) + '<!--[if !mso]><!-->\n';
+                cells += ind(d+2) + '<td' + _hzGapMbClsAttr + ' width="0" style="width:0;max-width:0;overflow:hidden;font-size:0;line-height:0;mso-hide:all;">&nbsp;</td>\n';
+                cells += ind(d+2) + '<!--<![endif]-->\n';
+              }
+              // _hzEffGapW === 0 → gap overridden to nothing, emit nothing.
+            } else {
+              // 'always' — apply mobile override class if mobileGap differs from desktop gap.
+              if (_hzMobGapPx !== null && _hzMobGapPx !== gapW) {
+                if (_hzIsStacking) {
+                  // On mobile, gap TD is display:block; override its height for vertical spacing.
+                  var _hzSOvCls = 'gap-mob-stack-' + _hzMobGapPx;
+                  if (!_mobileGapClassSeen[_hzSOvCls]) {
+                    _mobileGapClassSeen[_hzSOvCls] = true;
+                    if (_hzMobGapPx <= 0) {
+                      _mobileCssRules.push('    .' + _hzSOvCls + ' { height:0 !important; min-height:0 !important; overflow:hidden !important; font-size:0 !important; line-height:0 !important; }');
+                    } else {
+                      _mobileCssRules.push('    .' + _hzSOvCls + ' { height:' + _hzMobGapPx + 'px !important; min-height:' + _hzMobGapPx + 'px !important; overflow:visible !important; }');
+                    }
+                  }
+                  _hzGapClasses.push(_hzSOvCls);
+                } else {
+                  // Not stacking: override column gap width on mobile.
+                  var _hzWOvCls = 'gap-mob-hz-' + _hzMobGapPx;
+                  if (!_mobileGapClassSeen[_hzWOvCls]) {
+                    _mobileGapClassSeen[_hzWOvCls] = true;
+                    if (_hzMobGapPx <= 0) {
+                      _mobileCssRules.push('    .' + _hzWOvCls + ' { width:0 !important; max-width:0 !important; overflow:hidden !important; font-size:0 !important; line-height:0 !important; }');
+                    } else {
+                      _mobileCssRules.push('    .' + _hzWOvCls + ' { width:' + _hzMobGapPx + 'px !important; max-width:' + _hzMobGapPx + 'px !important; overflow:visible !important; font-size:0 !important; line-height:0 !important; }');
+                    }
+                  }
+                  _hzGapClasses.push(_hzWOvCls);
+                }
+              }
+              var _hzGapAlwaysCls = _hzGapClasses.length ? ' class="' + _hzGapClasses.join(' ') + '"' : '';
+              cells += ind(d+2) + '<td' + _hzGapAlwaysCls + ' width="' + gapW + '" style="width:' + gapW + 'px;font-size:0;line-height:0;">&nbsp;</td>\n';
+            }
+          }
         }
       }
     }
@@ -1417,6 +2005,15 @@ function _innerRenderNode(node, cfg, d, insideRounded, parentCellAlign) {
 
     var tblWAttr   = innerTblW ? ' width="' + innerTblW + '" align="' + innerTblAlign + '"' : ' width="100%"';
     var tblWSty    = innerTblW ? 'width:' + innerTblW + 'px;max-width:' + innerTblW + 'px;' + innerTblMargin : 'width:100%;';
+    // ALL-FILL layouts: add table-layout:fixed so desktop email clients honour
+    // the declared pixel column widths (fillShare) and gap TDs get their pixel
+    // allocation. Without this, auto table layout either collapses gap TDs
+    // (when percentage widths claimed 100%) or lets min-content-width override
+    // column widths (when long nowrap text forces a column wider than designed).
+    // With table-layout:fixed, the u+#body .fill-col{width:auto} rule still
+    // achieves equal distribution on Gmail iOS because fixed layout distributes
+    // auto-width columns equally after honoring explicit-width columns (gap TDs).
+    if (allFillPctMode) tblWSty += 'table-layout:fixed;';
 
     // hz-cells was previously used to force packed-content tables to width:100%
     // in Gmail iOS (via a u+#body CSS rule) to eliminate scaled-in side margins.
@@ -1443,7 +2040,13 @@ function _innerRenderNode(node, cfg, d, insideRounded, parentCellAlign) {
     var hzMobCls = '';  // class added to outer wrapper <td> for mobile pad
     if (cfg.mobileAlign) {
       var hzAlignCls = mobClass(node.id) + '-al';
-      _mobileCssRules.push('    .' + hzAlignCls + ',\n    .' + hzAlignCls + ' td { text-align: ' + cfg.mobileAlign + ' !important; }');
+      var _hzImgMargin = cfg.mobileAlign === 'center' ? 'margin: 0 auto'
+                       : cfg.mobileAlign === 'right'  ? 'margin-left: auto; margin-right: 0'
+                                                      : 'margin-right: auto; margin-left: 0';
+      _mobileCssRules.push(
+        '    .' + hzAlignCls + ',\n    .' + hzAlignCls + ' td { text-align: ' + cfg.mobileAlign + ' !important; }\n' +
+        '    .' + hzAlignCls + ' img { display: block !important; ' + _hzImgMargin + ' !important; }'
+      );
       tblClassAttr = ' class="' + hzAlignCls + '"';
     }
     var hasMobPad = cfg.mobilePadTop !== '' || cfg.mobilePadRight !== '' || cfg.mobilePadBottom !== '' || cfg.mobilePadLeft !== '';
@@ -1460,30 +2063,37 @@ function _innerRenderNode(node, cfg, d, insideRounded, parentCellAlign) {
     var outerWAttr = tblW ? ' width="' + tblW + '" align="' + hzOuterAlign + '"' : ' width="100%"';
     var outerWSty  = tblW ? 'width:' + tblW + 'px;max-width:' + tblW + 'px;' + hzMargin : 'width:100%';
 
-    var innerTbl = ind(d) + '<!--[if mso]><table role="presentation" width="' + (innerTblW ? innerTblW : '100%') + '" cellpadding="0" cellspacing="0" border="0"><tr><![endif]-->\n' +
-      ind(d) + '<table cellpadding="0" cellspacing="0" border="0" role="presentation"' + tblWAttr + tblClassAttr + ' style="' + tblWSty + '">\n' +
+    // The cells table already carries a width="N" attribute (via tblWAttr) that
+    // Outlook reads directly. An additional <!--[if mso]><table><tr><![endif]-->
+    // wrapper would place a <table> as a direct child of <tr> without <td> —
+    // invalid HTML that Outlook fixes by auto-inserting an anonymous <td>,
+    // producing an undocumented extra nesting layer. Removed.
+    var innerTbl = ind(d) + '<table cellpadding="0" cellspacing="0" border="0" role="presentation"' + tblWAttr + tblClassAttr + ' style="' + tblWSty + '">\n' +
       ind(d+1) + '<tr>\n' +
       cells +
       ind(d+1) + '</tr>\n' +
-      ind(d) + '</table>\n' +
-      ind(d) + '<!--[if mso]></tr></table><![endif]-->';
+      ind(d) + '</table>';
 
     // HREF: wrap the inner content in <a>, NOT the outer table.
     // Gmail iOS doesn't reliably honour display:block on <a> tags wrapping tables,
     // causing the <a> to shrink-wrap to content width instead of filling 100%.
     // By placing the <a> inside the <td>, it inherits the td's width naturally.
     if (cfg.href) {
-      innerTbl = ind(d) + '<a href="' + escapeHtml(cfg.href) + '" target="_blank" style="display:block;text-decoration:none;">\n' +
+      innerTbl = ind(d) + '<a href="' + escapeUrl(cfg.href) + '" target="_blank" style="display:block;text-decoration:none;">\n' +
         innerTbl + '\n' + ind(d) + '</a>';
     }
 
     var tbl;
     if (rad.any && !stroke) {
-      tbl = roundedWrapper(bgS, padS, rad, innerTbl, d, insideRounded);
+      tbl = roundedWrapper(bgS, padS, rad, innerTbl, d, insideRounded, hzMobCls, nodeW, Math.round(node.height));
     } else if (rad.any && stroke) {
+      // hzMobCls carries mobile padding/alignment overrides for this frame.
+      // Apply it to the inner <td> that holds the background + padding so that
+      // the @media rule can override it on mobile (same as the plain else branch).
+      var hzRSMobCls = hzMobCls ? ' class="' + hzMobCls + '"' : '';
       var radPadContent = (bgS || padS)
         ? ind(d) + '<table cellpadding="0" cellspacing="0" border="0" role="presentation"' + outerWAttr + ' style="' + outerWSty + '">\n' +
-          ind(d+1) + '<tr><td' + (bg ? ' bgcolor="' + bg + '"' : '') + (bgS || padS ? ' style="' + bgS + padS + '"' : '') + '>\n' +
+          ind(d+1) + '<tr><td' + hzRSMobCls + (bg ? ' bgcolor="' + bg + '"' : '') + (bgS || padS ? ' style="' + bgS + padS + '"' : '') + '>\n' +
           innerTbl + '\n' +
           ind(d+1) + '</td></tr>\n' +
           ind(d) + '</table>'
@@ -1534,16 +2144,69 @@ function _innerRenderNode(node, cfg, d, insideRounded, parentCellAlign) {
 
     // Pass rowAlign as parentCellAlign so child frames and images inherit it.
     var rowHtml = renderNode(rowKid, d+3, insideRounded || rad.any, rowAlign);
-    if (!rowHtml) continue;
+    if (!rowHtml) {
+      // Spacer pattern: a childless frame or rectangle with a positive Figma
+      // height acts as an explicit vertical spacer. Currently such nodes return
+      // '' and are silently skipped (along with their gap row). Instead, emit a
+      // plain spacer <tr> using the node's pixel height so designers can pad
+      // content to a target height — e.g. making two sibling card tiles equal
+      // height — without adding visible content.
+      var _spacerH = 0;
+      var _t = rowKid.type;
+      if (_t === 'FRAME' || _t === 'COMPONENT' || _t === 'INSTANCE' || _t === 'RECTANGLE') {
+        var _hasKids = rowKid.children && rowKid.children.length > 0;
+        if (!_hasKids) _spacerH = Math.round(rowKid.height) || 0;
+      }
+      if (_spacerH > 0) {
+        rows += emitVerticalGap(_spacerH, 'always', d+1, null);
+      }
+      continue;
+    }
 
+    // When a child has a visibility tag its shell <td> can contribute phantom
+    // height even after the inner div collapses to 0 — some clients add a
+    // residual line-height to any <td> that is non-empty in the DOM.
+    // font-size:0;line-height:0; on the shell <td> eliminates that sliver.
+    var _rowTdExtra = rowCfg.visibility ? 'font-size:0;line-height:0;' : '';
     rows += ind(d+1) + '<tr>\n' +
-      ind(d+2) + '<td align="' + rowAlign + '" style="text-align:' + rowAlign + ';">\n' +
+      ind(d+2) + '<td align="' + rowAlign + '" style="text-align:' + rowAlign + ';' + _rowTdExtra + '">\n' +
       rowHtml + '\n' +
       ind(d+2) + '</td>\n' +
       ind(d+1) + '</tr>\n';
 
+    // Trailing-newline spacer: renderText strips trailing <br> tags for
+    // consistent cross-client rendering. Emit an explicit spacer row here for
+    // each trailing \n so the vertical space matches the Figma text node height.
+    if (rowKid.type === 'TEXT' && rowKid.characters) {
+      var _tnChars = rowKid.characters;
+      var _tnCount = 0;
+      var _tnIdx   = _tnChars.length - 1;
+      while (_tnIdx >= 0 && _tnChars[_tnIdx] === '\n') { _tnCount++; _tnIdx--; }
+      if (_tnCount > 0) {
+        var _tnLh = rowKid.lineHeight;
+        var _tnFs = typeof rowKid.fontSize === 'number' ? rowKid.fontSize : 14;
+        var _tnLineH;
+        if (_tnLh && _tnLh !== figma.mixed && _tnLh.unit === 'PIXELS') {
+          _tnLineH = Math.round(_tnLh.value);
+        } else if (_tnLh && _tnLh !== figma.mixed && _tnLh.unit === 'PERCENT') {
+          _tnLineH = Math.round(_tnFs * _tnLh.value / 100);
+        } else {
+          _tnLineH = Math.round(_tnFs * 1.5);
+        }
+        var _tnSpacerPx = _tnCount * _tnLineH;
+        if (_tnSpacerPx > 0) rows += emitVerticalGap(_tnSpacerPx, 'always', d+1, null);
+      }
+    }
+
     if (g > 0 && ri < kids.length - 1) {
-      rows += ind(d+1) + '<tr><td height="' + g + '" style="height:' + g + 'px;font-size:0;line-height:0;">&nbsp;</td></tr>\n';
+      // A gap is only rendered on a device when BOTH the child that precedes it
+      // AND the child that follows it are visible on that device. Look ahead to
+      // kids[ri+1] (safe: ri < kids.length-1 is already checked above) and
+      // compute the gap's effective visibility via gapVisibility().
+      var _nextChildVis = getTag((kids[ri + 1].name || ''), 'visibility') || '';
+      var _rowGapVis    = gapVisibility(rowCfg.visibility, _nextChildVis);
+      var _vtMobGapOv   = cfg.mobileGap !== '' ? parseInt(cfg.mobileGap, 10) : null;
+      rows += emitVerticalGap(g, _rowGapVis, d+1, _vtMobGapOv);
     }
   }
 
@@ -1551,7 +2214,13 @@ function _innerRenderNode(node, cfg, d, insideRounded, parentCellAlign) {
   var vtMobCls = '';
   if (cfg.mobileAlign) {
     var vtAlignCls = mobClass(node.id) + '-al';
-    _mobileCssRules.push('    .' + vtAlignCls + ',\n    .' + vtAlignCls + ' td { text-align: ' + cfg.mobileAlign + ' !important; }');
+    var _vtImgMargin = cfg.mobileAlign === 'center' ? 'margin: 0 auto'
+                     : cfg.mobileAlign === 'right'  ? 'margin-left: auto; margin-right: 0'
+                                                    : 'margin-right: auto; margin-left: 0';
+    _mobileCssRules.push(
+      '    .' + vtAlignCls + ',\n    .' + vtAlignCls + ' td { text-align: ' + cfg.mobileAlign + ' !important; }\n' +
+      '    .' + vtAlignCls + ' img { display: block !important; ' + _vtImgMargin + ' !important; }'
+    );
     vtMobCls = vtAlignCls;
   }
   var vtHasMobPad = cfg.mobilePadTop !== '' || cfg.mobilePadRight !== '' || cfg.mobilePadBottom !== '' || cfg.mobilePadLeft !== '';
@@ -1583,13 +2252,13 @@ function _innerRenderNode(node, cfg, d, insideRounded, parentCellAlign) {
   // causing the <a> to shrink-wrap to content width instead of filling 100%.
   // By placing the <a> inside the <td>, it inherits the td's width naturally.
   if (cfg.href) {
-    innerTable = ind(d+3) + '<a href="' + escapeHtml(cfg.href) + '" target="_blank" style="display:block;text-decoration:none;">\n' +
+    innerTable = ind(d+3) + '<a href="' + escapeUrl(cfg.href) + '" target="_blank" style="display:block;text-decoration:none;">\n' +
       innerTable + '\n' + ind(d+3) + '</a>';
   }
 
   var block;
   if (rad.any && !stroke) {
-    var wrappedRadius = roundedWrapper(bgStr, padStr, rad, innerTable, d+2, insideRounded);
+    var wrappedRadius = roundedWrapper(bgStr, padStr, rad, innerTable, d+2, insideRounded, vtMobCls, nodeW, Math.round(node.height));
     block = ind(d) + '<table cellpadding="0" cellspacing="0" border="0" role="presentation"' + tblWAttr2 + ' style="' + tblWSty2 + '">\n' +
       ind(d+1) + '<tr>\n' +
       ind(d+2) + '<td align="' + childAlign + '">\n' +
@@ -1598,9 +2267,13 @@ function _innerRenderNode(node, cfg, d, insideRounded, parentCellAlign) {
       ind(d+1) + '</tr>\n' +
       ind(d) + '</table>';
   } else if (rad.any && stroke) {
+    // vtMobCls carries mobile padding/alignment overrides for this frame.
+    // Apply it to the inner <td> that holds the background + padding so that
+    // the @media rule can override it on mobile (same as the plain else branch).
+    var vtRSMobCls = vtMobCls ? ' class="' + vtMobCls + '"' : '';
     var radPadContent2 = (bgStr || padStr)
       ? ind(d+2) + '<table cellpadding="0" cellspacing="0" border="0" role="presentation" width="100%">\n' +
-        ind(d+3) + '<tr><td align="' + childAlign + '"' + (bg ? ' bgcolor="' + bg + '"' : '') + (bgStr || padStr ? ' style="' + bgStr + padStr + '"' : '') + '>\n' +
+        ind(d+3) + '<tr><td' + vtRSMobCls + ' align="' + childAlign + '"' + (bg ? ' bgcolor="' + bg + '"' : '') + (bgStr || padStr ? ' style="' + bgStr + padStr + '"' : '') + '>\n' +
         innerTable + '\n' +
         ind(d+3) + '</td></tr>\n' +
         ind(d+2) + '</table>'
@@ -1658,6 +2331,59 @@ function renderNode(node, d, insideRounded, parentCellAlign) {
   _mobileMode   = _savedMobileMode;
   _mobileFrameW = _savedMobileFrameW;
   if (!html) return '';
+
+  // ── BG image wrapper ─────────────────────────────────────────
+  // Applies to section/template frames that have bgImgOn enabled and a valid
+  // bgImgSrc URL.  Must run BEFORE comment/visibility wrapping so those can
+  // enclose the complete visual block (including the bg-image table).
+  //
+  // The inner rendering already suppressed bg (fill) so inner tables are
+  // transparent.  Here we:
+  //   • Retrieve the Figma fill to use as a bgcolor FALLBACK (clients with no
+  //     background-image support will show the fill colour instead).
+  //   • Wrap the inner HTML in a new table whose <td> carries both the
+  //     background="URL" attribute (basic Outlook support) and the CSS
+  //     background-image / background-size / background-position / background-repeat
+  //     properties (modern clients).
+  //   • This does NOT apply to image, button, or divider frame types, nor to
+  //     nodes that are themselves rendered as flat <img> tags.
+  // 'template' is intentionally excluded: template bg images are applied
+  // directly to the .email-container table inside generateEmailHtml /
+  // generateBreakpointEmailHtml, not via renderNode.
+  var _bgImgFrameTypes = { '': true, 'section': true };
+  if (cfg.bgImgOn && cfg.bgImgSrc &&
+      _bgImgFrameTypes[cfg.frameType || ''] &&
+      !isImgNode(node)) {
+    var _bgFill    = getSolidFill(node) || '#ffffff';
+    var _bgSrcEsc  = escapeUrl(cfg.bgImgSrc);
+    var _bgNodeW   = Math.round(node.width);
+    // In mobile-fluid mode, wide sections should stretch to 100% so the bg
+    // image also fills the screen edge-to-edge on narrow phones.
+    var _bgIsMob   = _mobileMode && _bgNodeW >= (_mobileFrameW * 0.5);
+    var _bgWAttr   = (_bgIsMob || !_bgNodeW)
+      ? ' width="100%"'
+      : (' width="100%" align="center"');
+    var _bgWSty    = (_bgIsMob || !_bgNodeW)
+      ? 'width:100%;'
+      : ('width:100%;max-width:' + _bgNodeW + 'px;margin:0 auto;');
+    // background-image CSS is rendered ON TOP of background-color in CSS layer order,
+    // so the image is always visible in supporting clients; bgcolor is fallback.
+    var _bgTdSty   = 'background-color:' + _bgFill + ';' +
+      'background-image:url(\'' + _bgSrcEsc + '\');' +
+      'background-size:cover;background-position:center top;background-repeat:no-repeat;';
+    html =
+      ind(d) + '<table cellpadding="0" cellspacing="0" border="0" role="presentation"' +
+        _bgWAttr + ' style="' + _bgWSty + '">\n' +
+      ind(d+1) + '<tr>\n' +
+      ind(d+2) + '<td align="center"' +
+        ' bgcolor="' + _bgFill + '"' +
+        ' background="' + _bgSrcEsc + '"' +
+        ' style="' + _bgTdSty + '">\n' +
+      html + '\n' +
+      ind(d+2) + '</td>\n' +
+      ind(d+1) + '</tr>\n' +
+      ind(d) + '</table>';
+  }
 
   // comment: inject HTML comment immediately before the block
   if (cfg.comment) {
@@ -1729,7 +2455,9 @@ function appendUtmToHtml(html, utmString) {
 // generateEmailHtml — builds complete HTML document
 // ══════════════════════════════════════════════════════════════
 function generateEmailHtml(tmpl, config) {
-  _mobileCssRules = []; // reset per-generation mobile rules
+  _mobileCssRules     = []; // reset per-generation mobile rules
+  _mobileGapClassSeen = {}; // reset dedup set for conditional gap/col CSS classes
+  _blendUsed          = false; // reset per-generation blend flag
   var preheader   = config.preheader   || '';
   var headStart   = config.headStart   || '';
   var headEnd     = config.headEnd     || '';
@@ -1745,19 +2473,67 @@ function generateEmailHtml(tmpl, config) {
   var bodyBg     = '#f4f4f4';
   var tmplBg     = getSolidFill(tmpl) || '#ffffff';
   var tmplStroke = getStroke(tmpl);
+  var tmplRad    = getCornerRadii(tmpl);
+  var tmplCfg    = parseNodeConfig(tmpl);
+  var tmplBgImg  = (tmplCfg.bgImgOn && tmplCfg.bgImgSrc) ? tmplCfg.bgImgSrc : null;
 
-  var rows     = '';
-  var sections = tmpl.children || [];
+  // ── Section assembly: sibling tables vs single container ────
+  // Sibling-table mode (BeeFree row pattern): each section becomes its own
+  // root-level <table class="email-container">, stacked sequentially. Benefits:
+  //   • Gmail's ~102KB clipping cuts cleanly BETWEEN tables instead of leaving
+  //     one giant unclosed table (broken layout).
+  //   • Outlook's tall-table rendering artifacts (~1790px page-break bug) are
+  //     per-table — short individual section tables never trigger them.
+  //   • A markup error in one section cannot cascade into the sections after it.
+  // Fallback: when the template frame carries decorations that must wrap ALL
+  // sections in one box — corner radius, border stroke, or a full-template
+  // background image — the legacy single-container structure is kept so
+  // clipping/border/bg behaviour is unchanged.
+  var splitSections = !(tmplRad.any || tmplStroke || tmplBgImg);
+
+  var rows          = '';
+  var sectionTables = '';
+  var sections      = tmpl.children || [];
   for (var si = 0; si < sections.length; si++) {
     var sec = sections[si];
     if (!sec || sec.visible === false) continue;
 
-    rows +=
-      ind(3) + '<tr>\n' +
-      ind(4) + '<td align="center">\n' +
-      renderNode(sec, 5) + '\n' +
-      ind(4) + '</td>\n' +
-      ind(3) + '</tr>\n';
+    if (splitSections) {
+      sectionTables +=
+        '<table role="presentation" cellspacing="0" cellpadding="0" border="0"\n' +
+        '       class="email-container"\n' +
+        '       align="center"\n' +
+        '       width="' + emailWidth + '"\n' +
+        '       bgcolor="' + tmplBg + '"\n' +
+        '       style="width:100%;max-width:' + emailWidth + 'px;margin:0 auto;' +
+        'background-color:' + tmplBg + ';border-collapse:collapse;">\n' +
+        ind(1) + '<tr>\n' +
+        ind(2) + '<td align="center">\n' +
+        renderNode(sec, 3) + '\n' +
+        ind(2) + '</td>\n' +
+        ind(1) + '</tr>\n' +
+        '</table>\n';
+    } else {
+      rows +=
+        ind(3) + '<tr>\n' +
+        ind(4) + '<td align="center">\n' +
+        renderNode(sec, 5) + '\n' +
+        ind(4) + '</td>\n' +
+        ind(3) + '</tr>\n';
+    }
+  }
+
+  // When the template frame has corner radii, wrap all rows in a single clipping
+  // <td> so inner content is clipped to the rounded corners (mirrors breakpoint mode).
+  // (Only reachable in single-container mode — splitSections is false when radii exist.)
+  if (!splitSections && tmplRad.any) {
+    rows = ind(1) + '<tr>\n' +
+      ind(2) + '<td style="padding:0;' + tmplRad.css + 'overflow:hidden;">\n' +
+      ind(2) + '<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">\n' +
+      rows +
+      ind(2) + '</table>\n' +
+      ind(2) + '</td>\n' +
+      ind(1) + '</tr>\n';
   }
 
   var preheaderHtml = preheader
@@ -1771,6 +2547,31 @@ function generateEmailHtml(tmpl, config) {
     (utmCampaign ? '<meta name="utm-campaign" content="' + escapeHtml(utmCampaign) + '">\n' : '') +
     (utmContent  ? '<meta name="utm-content"  content="' + escapeHtml(utmContent)  + '">\n' : '') +
     (utmTerm     ? '<meta name="utm-term"     content="' + escapeHtml(utmTerm)     + '">\n' : '');
+
+  // Container markup: stacked sibling section tables (sibling mode) or the
+  // legacy single wrapper table (fallback for radius / stroke / bg-image).
+  // width:100% + max-width:<emailWidth>px (instead of a fixed pixel width)
+  // lets clients that strip <style> entirely shrink the email to the viewport
+  // instead of forcing horizontal scroll; the MSO ghost table outside this
+  // block still pins Outlook at exactly emailWidth.
+  var containerHtml;
+  if (splitSections) {
+    containerHtml = sectionTables;
+  } else {
+    containerHtml =
+      '<table role="presentation" cellspacing="0" cellpadding="0"\n' +
+      '       class="email-container"\n' +
+      '       width="' + emailWidth + '"\n' +
+      '       bgcolor="' + tmplBg + '"\n' +
+      (tmplBgImg ? '       background="' + escapeHtml(tmplBgImg) + '"\n' : '') +
+      '       style="width:100%;max-width:' + emailWidth + 'px;' +
+      'background-color:' + tmplBg + ';' +
+      (tmplBgImg ? 'background-image:url(\'' + escapeHtml(tmplBgImg) + '\');background-size:cover;background-position:center top;background-repeat:no-repeat;' : '') +
+      (tmplStroke || tmplRad.any ? 'border-collapse:separate;border-spacing:0;' + tmplRad.css + (tmplStroke ? tmplStroke.css : '') : 'border-collapse:collapse;') +
+      '">\n' +
+      rows +
+      '</table>\n';
+  }
 
   var _html = '<!DOCTYPE html>\n' +
 '<html lang="en" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">\n' +
@@ -1788,7 +2589,7 @@ utmMetaTags +
 '<o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->\n' +
 '<style type="text/css">\n' +
 '  * { box-sizing: border-box; }\n' +
-'  body, table, td, p, a, h1, h2, h3 {\n' +
+'  body, table, td, p, a, h1, h2, h3, h4, h5, h6 {\n' +
 '    -webkit-text-size-adjust: 100%;\n' +
 '    -ms-text-size-adjust: 100%;\n' +
 '  }\n' +
@@ -1812,7 +2613,10 @@ utmMetaTags +
 '     The second rule covers any <img> Gmail injects inside <p> tags\n' +
 '     regardless of whether class="il" is present. */\n' +
 '  img.il { display: inline !important; vertical-align: middle !important; }\n' +
-'  u + #body .email-container p img {\n' +
+'  u + #body .email-container p img,\n' +
+'  u + #body .email-container h1 img, u + #body .email-container h2 img,\n' +
+'  u + #body .email-container h3 img, u + #body .email-container h4 img,\n' +
+'  u + #body .email-container h5 img, u + #body .email-container h6 img {\n' +
 '    display: inline !important;\n' +
 '    vertical-align: middle !important;\n' +
 '  }\n' +
@@ -1822,7 +2626,7 @@ utmMetaTags +
 '    background-color: ' + bodyBg + ';\n' +
 '    width: 100% !important;\n' +
 '  }\n' +
-'  h1, h2, h3, p { margin: 0; padding: 0; }\n' +
+'  h1, h2, h3, h4, h5, h6, p { margin: 0; padding: 0; }\n' +
 '  a { color: inherit; }\n' +
 '  a[x-apple-data-detectors] {\n' +
 '    color: inherit !important;\n' +
@@ -1885,7 +2689,10 @@ utmMetaTags +
 '       .nowrap-lbl is excluded: short labels (dates, counters, icon+text\n' +
 '       combos) must never word-wrap inside their tight columns. */\n' +
 '    .email-container td:not(.nowrap-lbl),\n' +
-'    .email-container p:not(.nowrap-lbl) {\n' +
+'    .email-container p:not(.nowrap-lbl),\n' +
+'    .email-container h1:not(.nowrap-lbl), .email-container h2:not(.nowrap-lbl),\n' +
+'    .email-container h3:not(.nowrap-lbl), .email-container h4:not(.nowrap-lbl),\n' +
+'    .email-container h5:not(.nowrap-lbl), .email-container h6:not(.nowrap-lbl) {\n' +
 '      white-space: normal !important;\n' +
 '    }\n' +
 '    .stack-column {\n' +
@@ -1897,15 +2704,30 @@ utmMetaTags +
 '    .full-width-mobile td { width: 100% !important; }\n' +
 '    .full-width-mobile a { display: block !important; width: 100% !important; box-sizing: border-box !important; }\n' +
 '    .hide-mobile { display: none !important; max-height: 0 !important; overflow: hidden !important; }\n' +
-'  }\n' +
-'  /* Visibility breakpoint: one pixel narrower than the email width so this\n' +
-'     block NEVER fires when the email is rendered at its designed desktop\n' +
-'     width (emailWidth px). It only fires on genuinely narrow viewports.\n' +
-'     Keeping it separate from the container @media above prevents the\n' +
-'     "fires at exactly emailWidth" problem that hides desktop content in\n' +
-'     the plugin preview and in email clients that constrain the reading\n' +
-'     pane to the email\'s declared width. */\n' +
-'  @media only screen and (max-width: ' + (emailWidth - 1) + 'px) {\n' +
+'    /* Visibility-conditioned gap rows/cells (.gap-dt) and columns (.col-dt-hide).\n' +
+'       These are desktop-only elements that must take zero space on mobile.\n' +
+'       height:0 + width:0 handles both vertical spacer rows and horizontal gap\n' +
+'       cells from a single class. The height="N" / width="N" HTML attributes\n' +
+'       are preserved so Outlook (which ignores the @media rule) still renders\n' +
+'       the correct dimensions — which is exactly right for desktop-only content. */\n' +
+'    .gap-dt {\n' +
+'      height: 0 !important; max-height: 0 !important;\n' +
+'      width: 0 !important;  max-width: 0 !important;\n' +
+'      overflow: hidden !important;\n' +
+'      padding: 0 !important;\n' +
+'      font-size: 0 !important;\n' +
+'      line-height: 0 !important;\n' +
+'    }\n' +
+'    .col-dt-hide {\n' +
+'      width: 0 !important; max-width: 0 !important;\n' +
+'      overflow: hidden !important;\n' +
+'      padding: 0 !important;\n' +
+'      font-size: 0 !important;\n' +
+'      line-height: 0 !important;\n' +
+'    }\n' +
+'    /* Visibility — these rules live in the same @media block so they fire at\n' +
+'       the same breakpoint as the container/layout rules above. Both used\n' +
+'       (emailWidth-1)px, so merging them is safe and avoids the duplication. */\n' +
 '    .for-mobile {\n' +
 '      display: block !important;\n' +
 '      max-height: none !important;\n' +
@@ -1929,16 +2751,7 @@ preheaderHtml +
 ind(1) + '<tr>\n' +
 ind(2) + '<td align="center" valign="top" style="padding:0;">\n' +
 '<!--[if mso]><table role="presentation" align="center" width="' + emailWidth + '" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->\n' +
-'<table role="presentation" cellspacing="0" cellpadding="0"\n' +
-'       class="email-container"\n' +
-'       width="' + emailWidth + '"\n' +
-'       bgcolor="' + tmplBg + '"\n' +
-'       style="width:' + emailWidth + 'px;max-width:' + emailWidth + 'px;' +
-'background-color:' + tmplBg + ';' +
-(tmplStroke ? 'border-collapse:separate;' + tmplStroke.css : 'border-collapse:collapse;') +
-'">\n' +
-rows +
-'</table>\n' +
+containerHtml +
 '<!--[if mso]></td></tr></table><![endif]-->\n' +
 ind(2) + '</td>\n' +
 ind(1) + '</tr>\n' +
@@ -1952,6 +2765,8 @@ ind(1) + '</tr>\n' +
       _mobileCssRules.join('\n') + '\n}\n</style>\n';
     _html = _html.replace('</head>', _mobStyle + '</head>');
   }
+  // Inject blend assets (class="body" + scoped rules) only if a blend layer fired.
+  _html = injectBlendAssets(_html);
   var _utmStr = buildUtmString(utmSource, utmMedium, utmCampaign, utmContent, utmTerm);
   return appendUtmToHtml(_html, _utmStr);
 }
@@ -1963,7 +2778,9 @@ ind(1) + '</tr>\n' +
 // Outlook (no media-query support) always sees the desktop version.
 // ══════════════════════════════════════════════════════════════
 function generateBreakpointEmailHtml(desktopNode, mobileNode, config) {
-  _mobileCssRules = []; // reset per-generation mobile rules
+  _mobileCssRules     = []; // reset per-generation mobile rules
+  _mobileGapClassSeen = {}; // reset dedup set for conditional gap/col CSS classes
+  _blendUsed          = false; // reset per-generation blend flag
   var preheader    = config.preheader   || '';
   var headStart    = config.headStart   || '';
   var headEnd      = config.headEnd     || '';
@@ -1984,38 +2801,84 @@ function generateBreakpointEmailHtml(desktopNode, mobileNode, config) {
   var mobileStroke  = getStroke(mobileNode);
   var desktopRad    = getCornerRadii(desktopNode);
   var mobileRad     = getCornerRadii(mobileNode);
+  var bpDesktopCfg  = parseNodeConfig(desktopNode);
+  var bpMobileCfg   = parseNodeConfig(mobileNode);
+  var bpDesktopBgImg = (bpDesktopCfg.bgImgOn && bpDesktopCfg.bgImgSrc) ? bpDesktopCfg.bgImgSrc : null;
+  var bpMobileBgImg  = (bpMobileCfg.bgImgOn  && bpMobileCfg.bgImgSrc)  ? bpMobileCfg.bgImgSrc  : null;
+
+  // Sibling-table mode (see single-frame mode comments): each section becomes
+  // its own root-level table. Falls back to the legacy single container when
+  // the frame carries whole-email decorations (radius / stroke / bg image).
+  var splitDesktop = !(desktopRad.any || desktopStroke || bpDesktopBgImg);
+  var splitMobile  = !(mobileRad.any  || mobileStroke  || bpMobileBgImg);
 
   // ── Build desktop rows ──────────────────────────────────────
-  var desktopRows = '';
-  var desktopSecs = desktopNode.children || [];
+  var desktopRows   = '';
+  var desktopTables = '';
+  var desktopSecs   = desktopNode.children || [];
   for (var di = 0; di < desktopSecs.length; di++) {
     var dsec = desktopSecs[di];
     if (!dsec || dsec.visible === false) continue;
-    desktopRows +=
-      ind(3) + '<tr>\n' +
-      ind(4) + '<td align="center">\n' +
-      renderNode(dsec, 5) + '\n' +
-      ind(4) + '</td>\n' +
-      ind(3) + '</tr>\n';
+    if (splitDesktop) {
+      desktopTables +=
+        '<table role="presentation" cellspacing="0" cellpadding="0" border="0"\n' +
+        '       class="email-container"\n' +
+        '       align="center"\n' +
+        '       width="' + desktopWidth + '"\n' +
+        '       bgcolor="' + desktopBg + '"\n' +
+        '       style="width:100%;max-width:' + desktopWidth + 'px;margin:0 auto;' +
+        'background-color:' + desktopBg + ';border-collapse:collapse;">\n' +
+        ind(1) + '<tr>\n' +
+        ind(2) + '<td align="center">\n' +
+        renderNode(dsec, 3) + '\n' +
+        ind(2) + '</td>\n' +
+        ind(1) + '</tr>\n' +
+        '</table>\n';
+    } else {
+      desktopRows +=
+        ind(3) + '<tr>\n' +
+        ind(4) + '<td align="center">\n' +
+        renderNode(dsec, 5) + '\n' +
+        ind(4) + '</td>\n' +
+        ind(3) + '</tr>\n';
+    }
   }
 
   // ── Build mobile rows ───────────────────────────────────────
   // Enable mobile fluid mode: tables >= 50% of mobile frame width
   // render as width:100% instead of fixed px, so all container tables
   // adapt to the device screen width (critical for Gmail on narrow phones).
-  var mobileRows = '';
-  var mobileSecs = mobileNode.children || [];
+  var mobileRows   = '';
+  var mobileTables = '';
+  var mobileSecs   = mobileNode.children || [];
   _mobileMode   = true;
   _mobileFrameW = mobileWidth;
   for (var mi = 0; mi < mobileSecs.length; mi++) {
     var msec = mobileSecs[mi];
     if (!msec || msec.visible === false) continue;
-    mobileRows +=
-      ind(3) + '<tr>\n' +
-      ind(4) + '<td align="center">\n' +
-      renderNode(msec, 5) + '\n' +
-      ind(4) + '</td>\n' +
-      ind(3) + '</tr>\n';
+    if (splitMobile) {
+      mobileTables +=
+        '<table role="presentation" cellspacing="0" cellpadding="0" border="0"\n' +
+        '       class="email-container"\n' +
+        '       align="center"\n' +
+        '       width="100%"\n' +
+        '       bgcolor="' + mobileBg + '"\n' +
+        '       style="width:100%;max-width:100%;margin:0 auto;' +
+        'background-color:' + mobileBg + ';border-collapse:collapse;">\n' +
+        ind(1) + '<tr>\n' +
+        ind(2) + '<td align="center">\n' +
+        renderNode(msec, 3) + '\n' +
+        ind(2) + '</td>\n' +
+        ind(1) + '</tr>\n' +
+        '</table>\n';
+    } else {
+      mobileRows +=
+        ind(3) + '<tr>\n' +
+        ind(4) + '<td align="center">\n' +
+        renderNode(msec, 5) + '\n' +
+        ind(4) + '</td>\n' +
+        ind(3) + '</tr>\n';
+    }
   }
   _mobileMode = false;
 
@@ -2041,13 +2904,17 @@ function generateBreakpointEmailHtml(desktopNode, mobileNode, config) {
        ind(2) + '</td>\n' +
        ind(1) + '</tr>\n')
     : desktopRows;
-  var desktopTable =
-    '<table role="presentation" cellspacing="0" cellpadding="0" border="0"\n' +
+  var desktopTable = splitDesktop
+    ? desktopTables
+    : '<table role="presentation" cellspacing="0" cellpadding="0" border="0"\n' +
     '       class="email-container"\n' +
     '       width="' + desktopWidth + '"\n' +
     '       bgcolor="' + desktopBg + '"\n' +
-    '       style="width:' + desktopWidth + 'px;max-width:' + desktopWidth + 'px;' +
-    'background-color:' + desktopBg + ';' + desktopCollapse +
+    (bpDesktopBgImg ? '       background="' + escapeHtml(bpDesktopBgImg) + '"\n' : '') +
+    '       style="width:100%;max-width:' + desktopWidth + 'px;' +
+    'background-color:' + desktopBg + ';' +
+    (bpDesktopBgImg ? 'background-image:url(\'' + escapeHtml(bpDesktopBgImg) + '\');background-size:cover;background-position:center top;background-repeat:no-repeat;' : '') +
+    desktopCollapse +
     '">\n' +
     desktopInnerRows +
     '</table>';
@@ -2074,14 +2941,18 @@ function generateBreakpointEmailHtml(desktopNode, mobileNode, config) {
   // The inner sections render as width:100% via _mobileMode fluid logic,
   // so content also scales up correctly when the screen is wider than the
   // Figma mobile frame width.
-  var mobileTable =
-    '<table role="presentation" cellspacing="0" cellpadding="0" border="0"\n' +
+  var mobileTable = splitMobile
+    ? mobileTables
+    : '<table role="presentation" cellspacing="0" cellpadding="0" border="0"\n' +
     '       class="email-container"\n' +
     '       align="center"\n' +
     '       width="100%"\n' +
     '       bgcolor="' + mobileBg + '"\n' +
+    (bpMobileBgImg ? '       background="' + escapeHtml(bpMobileBgImg) + '"\n' : '') +
     '       style="width:100%;max-width:100%;margin:0 auto;' +
-    'background-color:' + mobileBg + ';' + mobileCollapse +
+    'background-color:' + mobileBg + ';' +
+    (bpMobileBgImg ? 'background-image:url(\'' + escapeHtml(bpMobileBgImg) + '\');background-size:cover;background-position:center top;background-repeat:no-repeat;' : '') +
+    mobileCollapse +
     '">\n' +
     mobileInnerRows +
     '</table>';
@@ -2109,7 +2980,7 @@ bpUtmMetaTags +
 '<o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->\n' +
 '<style type="text/css">\n' +
 '  * { box-sizing: border-box; }\n' +
-'  body, table, td, p, a, h1, h2, h3 {\n' +
+'  body, table, td, p, a, h1, h2, h3, h4, h5, h6 {\n' +
 '    -webkit-text-size-adjust: 100%;\n' +
 '    -ms-text-size-adjust: 100%;\n' +
 '  }\n' +
@@ -2133,7 +3004,10 @@ bpUtmMetaTags +
 '     The second rule covers any <img> Gmail injects inside <p> tags\n' +
 '     regardless of whether class="il" is present. */\n' +
 '  img.il { display: inline !important; vertical-align: middle !important; }\n' +
-'  u + #body .email-container p img {\n' +
+'  u + #body .email-container p img,\n' +
+'  u + #body .email-container h1 img, u + #body .email-container h2 img,\n' +
+'  u + #body .email-container h3 img, u + #body .email-container h4 img,\n' +
+'  u + #body .email-container h5 img, u + #body .email-container h6 img {\n' +
 '    display: inline !important;\n' +
 '    vertical-align: middle !important;\n' +
 '  }\n' +
@@ -2143,7 +3017,7 @@ bpUtmMetaTags +
 '    background-color: ' + bodyBg + ';\n' +
 '    width: 100% !important;\n' +
 '  }\n' +
-'  h1, h2, h3, p { margin: 0; padding: 0; }\n' +
+'  h1, h2, h3, h4, h5, h6, p { margin: 0; padding: 0; }\n' +
 '  a { color: inherit; }\n' +
 '  a[x-apple-data-detectors] {\n' +
 '    color: inherit !important;\n' +
@@ -2191,7 +3065,10 @@ bpUtmMetaTags +
 '      table-layout: fixed !important;\n' +
 '    }\n' +
 '    .for-mobile td:not(.nowrap-lbl),\n' +
-'    .for-mobile p:not(.nowrap-lbl) {\n' +
+'    .for-mobile p:not(.nowrap-lbl),\n' +
+'    .for-mobile h1:not(.nowrap-lbl), .for-mobile h2:not(.nowrap-lbl),\n' +
+'    .for-mobile h3:not(.nowrap-lbl), .for-mobile h4:not(.nowrap-lbl),\n' +
+'    .for-mobile h5:not(.nowrap-lbl), .for-mobile h6:not(.nowrap-lbl) {\n' +
 '      white-space: normal !important;\n' +
 '    }\n' +
 '    /* FILL columns absorb remaining space after fixed columns take their share.\n' +
@@ -2200,6 +3077,23 @@ bpUtmMetaTags +
 '    .for-mobile .fill-col {\n' +
 '      width: auto !important;\n' +
 '      min-width: 0 !important;\n' +
+'    }\n' +
+'    /* Visibility-conditioned gap rows/cells and columns — same semantics as\n' +
+'       single-frame mode. See the single-frame @media block for full comments. */\n' +
+'    .gap-dt {\n' +
+'      height: 0 !important; max-height: 0 !important;\n' +
+'      width: 0 !important;  max-width: 0 !important;\n' +
+'      overflow: hidden !important;\n' +
+'      padding: 0 !important;\n' +
+'      font-size: 0 !important;\n' +
+'      line-height: 0 !important;\n' +
+'    }\n' +
+'    .col-dt-hide {\n' +
+'      width: 0 !important; max-width: 0 !important;\n' +
+'      overflow: hidden !important;\n' +
+'      padding: 0 !important;\n' +
+'      font-size: 0 !important;\n' +
+'      line-height: 0 !important;\n' +
 '    }\n' +
 '    .for-desktop {\n' +
 '      display: none !important;\n' +
@@ -2253,6 +3147,8 @@ ind(1) + '</tr>\n' +
       _mobileCssRules.join('\n') + '\n}\n</style>\n';
     _bpHtml = _bpHtml.replace('</head>', _bpMobStyle + '</head>');
   }
+  // Inject blend assets (class="body" + scoped rules) only if a blend layer fired.
+  _bpHtml = injectBlendAssets(_bpHtml);
   var _bpUtmStr = buildUtmString(utmSource, utmMedium, utmCampaign, utmContent, utmTerm);
   return appendUtmToHtml(_bpHtml, _bpUtmStr);
 }
@@ -2308,7 +3204,7 @@ function scanForIssues(templateNode) {
   }
 
   // ── Recursive tree walk ───────────────────────────────────
-  function walk(node, depth) {
+  function walk(node, depth, parentInnerW, parentLayoutMode) {
     if (!node || node.visible === false) return;
     var cfg = parseNodeConfig(node);
     var t   = node.type;
@@ -2381,6 +3277,53 @@ function scanForIssues(templateNode) {
         push('major', 'hz-overflow',
           'Content overflows the frame by ' + ((fixedSum + gapSum) - innerW) + 'px',
           'Children (' + fixedSum + 'px) and gaps (' + gapSum + 'px) add up to ' + (fixedSum + gapSum) + 'px, but the frame\'s inner width is ' + innerW + 'px. Content will overflow.',
+          node);
+      }
+    }
+
+    // 11 — Critical: section-level frame spans template width but is not Fill.
+    // On iPhone Gmail, u+#body expands .email-container to phone width, but any
+    // child table with a fixed pixel width overflows the container. Because Gmail
+    // iOS table rendering does not reliably honour max-width on table elements, the
+    // container expands back to that fixed width — forcing every other section
+    // (even those that ARE fill) to also render at desktop width. One non-fill
+    // section breaks the whole email layout on iPhone Gmail.
+    if (tw > 0 &&
+        depth === 1 &&
+        !cfg.rawCode &&
+        (t === 'FRAME' || t === 'COMPONENT' || t === 'INSTANCE') &&
+        cfg.frameType !== 'button' && cfg.frameType !== 'image' && cfg.frameType !== 'divider' &&
+        !cfg.exportImg && !isImgNode(node)) {
+      var _secW    = Math.round(node.width);
+      var _secFill = (node.layoutGrow === 1) || (node.layoutSizingHorizontal === 'FILL');
+      var _secHug  = (node.layoutSizingHorizontal === 'HUG');
+      if (!_secFill && !_secHug && _secW >= tw - 1) {
+        push('critical', 'fill-sect-' + node.id,
+          'Section not set to Fill',
+          'Full-width section is not set to Fill. On iPhone Gmail this causes the entire email to render at desktop width. Set horizontal sizing to Fill in Figma.',
+          node);
+      }
+    }
+
+    // 12 — Major: inner frame spans its parent's full inner width but is not Fill.
+    // Same overflow mechanism as Check 11, but scoped to the containing section
+    // rather than the entire email. Skipped for children of horizontal layouts
+    // (those are intentional fixed-width columns).
+    if (tw > 0 &&
+        depth === 2 &&
+        parentInnerW > 0 &&
+        !cfg.rawCode &&
+        (t === 'FRAME' || t === 'COMPONENT' || t === 'INSTANCE') &&
+        cfg.frameType !== 'button' && cfg.frameType !== 'image' && cfg.frameType !== 'divider' &&
+        !cfg.exportImg && !isImgNode(node) &&
+        parentLayoutMode !== 'HORIZONTAL') {
+      var _innerW    = Math.round(node.width);
+      var _innerFill = (node.layoutGrow === 1) || (node.layoutSizingHorizontal === 'FILL');
+      var _innerHug  = (node.layoutSizingHorizontal === 'HUG');
+      if (!_innerFill && !_innerHug && _innerW >= parentInnerW - 1 && _innerW > tw * 0.5) {
+        push('major', 'fill-inner-' + node.id,
+          'Full-width frame not set to Fill',
+          'This frame is ' + _innerW + 'px wide — matching its parent\'s inner width — but its horizontal sizing is not Fill. On iPhone Gmail it may overflow its container and break the section layout. Set horizontal sizing to Fill in Figma.',
           node);
       }
     }
@@ -2543,15 +3486,41 @@ function scanForIssues(templateNode) {
         node);
     }
 
+    // 23 — Background image checks (section/template frames only)
+    var _bgImgCheckTypes = { '': true, 'section': true, 'template': true };
+    if (cfg.bgImgOn && _bgImgCheckTypes[cfg.frameType || '']) {
+      // Choose the correct Properties panel field ID based on frame type so the
+      // Issues "Edit" button focuses the right input when the node is selected.
+      var _bgFieldId = (cfg.frameType === 'template') ? 'inp-bgimg-src-tmpl' : 'inp-bgimg-src';
+      if (!cfg.bgImgSrc) {
+        push('critical', 'bgimg-no-src',
+          'Background image has no source URL',
+          'The background image setting is enabled on this frame but no source URL has been set. The image won\'t load.',
+          node, _bgFieldId);
+      } else if (cfg.bgImgSrc.indexOf('http') !== 0) {
+        push('major', 'bgimg-relative-url',
+          'Background image URL is not absolute',
+          'Background image URLs must start with https:// to load correctly in email clients.',
+          node, _bgFieldId);
+      } else {
+        push('minor', 'bgimg-outlook-' + node.id,
+          'Background image: limited Outlook support',
+          'Background images display via CSS background-image in modern clients and via the background= attribute in Outlook. Outlook does not support background-size:cover — the image will tile at its natural size. Consider using a wide image that covers the section at its natural dimensions.',
+          node);
+      }
+    }
+
     // Recurse into children
     if (node.children) {
+      var _walkInnerW      = Math.round(node.width) - safeNum(node.paddingLeft, 0) - safeNum(node.paddingRight, 0);
+      var _walkLayoutMode  = node.layoutMode || 'NONE';
       for (var ci = 0; ci < node.children.length; ci++) {
-        walk(node.children[ci], depth + 1);
+        walk(node.children[ci], depth + 1, _walkInnerW, _walkLayoutMode);
       }
     }
   }
 
-  walk(templateNode, 0);
+  walk(templateNode, 0, 0, 'NONE');
   return issues;
 }
 
@@ -2574,8 +3543,32 @@ var _bpMobileId     = null;
 var _mobileMode      = false;
 var _mobileFrameW    = 380; // updated before each mobile render
 // Per-generation mobile CSS rules collected during node rendering, flushed into @media block.
-var _mobileCssRules  = [];
+var _mobileCssRules     = [];
+// Tracks which conditional gap CSS class names have already been pushed to
+// _mobileCssRules this generation so duplicate rules are never emitted.
+var _mobileGapClassSeen = {};
+// Set true when at least one text layer flagged for blend emits the black-bg
+// sandwich this generation. Gates class="body" + the scoped blend <style>.
+var _blendUsed = false;
 function mobClass(nodeId) { return 'mob-' + nodeId.replace(/:/g, '-'); }
+
+// The scoped blend rules — single source of truth, injected by both generators.
+// `u + .body` is a Gmail-only selector, so Outlook/Apple Mail never match the
+// wrappers and never show the black boxes. background:#000000 is the identity
+// surface for both screen and difference.
+var _BLEND_STYLE =
+  '<style type="text/css">\n' +
+  '  u + .body .q-blend-screen     { background:#000000; mix-blend-mode:screen; }\n' +
+  '  u + .body .q-blend-difference { background:#000000; mix-blend-mode:difference; }\n' +
+  '</style>\n';
+// Adds class="body" alongside id="body" (never replaces it — Safety Rule 2) and
+// injects the blend <style>, but ONLY when a blend layer was actually emitted.
+function injectBlendAssets(html) {
+  if (!_blendUsed) return html;
+  html = html.replace('<body id="body"', '<body id="body" class="body"');
+  html = html.replace('</head>', _BLEND_STYLE + '</head>');
+  return html;
+}
 
 function sendSelectionToUI() {
   var sel = figma.currentPage.selection;
@@ -2630,7 +3623,28 @@ figma.ui.onmessage = function(msg) {
   if (msg.type === 'update-prop') {
     if (!node) return;
     var key = msg.key; var val = msg.value;
-    if      (key === 'frameType')       setFrameType(node, val);
+    if (key === 'frameType') {
+      // ── Clear stale type-specific data when switching frame types ────────
+      var _prevCfg  = parseNodeConfig(node);
+      var _prevType = _prevCfg.frameType || '';
+      setFrameType(node, val);
+      // Leaving 'image': remove image-only name tags so the frame no longer
+      // resolves to a flat <img> in the renderer.
+      if (_prevType === 'image' && val !== 'image') {
+        setTag(node,  'src',      null);
+        setTag(node,  'alt',      null);
+        setTag(node,  'imgformat', null);
+        setFlag(node, 'exportimg', false);
+        setFlag(node, 'fullwidth', false);
+      }
+      // Entering a type that doesn't support bg images: wipe bg-image pluginData
+      // so it cannot leak into the HTML output of the new type.
+      var _noBgFt = { 'image': 1, 'button': 1, 'divider': 1 };
+      if (_noBgFt[val || '']) {
+        node.setPluginData('bgImgOn',  '');
+        node.setPluginData('bgImgSrc', '');
+      }
+    }
     else if (key === 'exportImg')       setFlag(node, 'exportimg', val);
     else if (key === 'fullWidthMobile') setFlag(node, 'fullwidth', val);
     else if (key === 'visibility')      setTag(node, 'visibility', val);
@@ -2655,8 +3669,19 @@ figma.ui.onmessage = function(msg) {
     else if (key === 'mobilePadRight') { node.setPluginData('mobilePadRight', val || ''); }
     else if (key === 'mobilePadBottom'){ node.setPluginData('mobilePadBottom',val || ''); }
     else if (key === 'mobilePadLeft')  { node.setPluginData('mobilePadLeft',  val || ''); }
-    else if (key === 'mobileFontSize') { node.setPluginData('mobileFontSize', val || ''); }
+    else if (key === 'mobileFontSize')  { node.setPluginData('mobileFontSize',  val || ''); }
     else if (key === 'mobileLineHeight'){ node.setPluginData('mobileLineHeight', val || ''); }
+    else if (key === 'mobileTextAlign') { node.setPluginData('mobileTextAlign', val || ''); }
+    else if (key === 'mobileGap')      { node.setPluginData('mobileGap',       val || ''); }
+    else if (key === 'htmlTag')        { node.setPluginData('htmlTag',         val || ''); }
+    else if (key === 'bgImgOn')  {
+      node.setPluginData('bgImgOn', val ? '1' : '');
+      // When turning the toggle OFF, also wipe the stored URL so no ghost src
+      // persists invisibly and could re-activate if bgImgOn is re-enabled later
+      // with the same pluginData. The UI will also clear its input field.
+      if (!val) { node.setPluginData('bgImgSrc', ''); }
+    }
+    else if (key === 'bgImgSrc') { node.setPluginData('bgImgSrc', val || ''); }
     else                                setTag(node, key, val);
     figma.ui.postMessage({ type: 'name-updated', name: node.name });
     // Live-update the Issues tab whenever a property is changed via the panel

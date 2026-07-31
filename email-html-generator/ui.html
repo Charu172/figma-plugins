@@ -1260,6 +1260,28 @@
           </div>
         </div>
 
+        <!-- HTML tag — text layers only (toggled in updateMobileSection) -->
+        <div class="field-row" id="row-html-tag" style="display:none;">
+          <label class="field-label" for="sel-html-tag">
+            HTML tag
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">The HTML tag this text exports as. Headings (H1–H6) improve accessibility and help email clients understand your content structure. Visual styling stays exactly as designed.</span>
+            </span>
+          </label>
+          <div class="field-control">
+            <select id="sel-html-tag" data-key="htmlTag">
+              <option value="">Paragraph (default)</option>
+              <option value="h1">Heading 1</option>
+              <option value="h2">Heading 2</option>
+              <option value="h3">Heading 3</option>
+              <option value="h4">Heading 4</option>
+              <option value="h5">Heading 5</option>
+              <option value="h6">Heading 6</option>
+            </select>
+          </div>
+        </div>
+
         <div class="field-row">
           <label class="field-label" for="inp-href">
             Hyperlink
@@ -1301,6 +1323,38 @@
           </label>
           <div class="field-control">
             <input type="text" id="inp-rawcode" placeholder="Eg. data-track=&quot;hero&quot;" data-key="rawCode">
+          </div>
+        </div>
+
+        <!-- Background image toggle — hidden for divider frame type -->
+        <div id="sec-bgimg-block" style="display:none;">
+          <div class="toggle-row">
+            <div class="toggle-label">
+              <span>Background image</span>
+              <span class="tooltip-wrap">
+                <span class="tooltip-icon">i</span>
+                <span class="tooltip-text">Render an image as the background of this section. Overrides any Figma fill. Requires a hosted image URL.</span>
+              </span>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="tog-bg-img">
+              <span class="toggle-track"></span>
+              <span class="toggle-thumb"></span>
+            </label>
+          </div>
+          <div class="sub-fields" id="sub-bgimg">
+            <div class="field-row" style="margin-bottom:0;">
+              <label class="field-label" for="inp-bgimg-src">
+                Image URL
+                <span class="tooltip-wrap">
+                  <span class="tooltip-icon">i</span>
+                  <span class="tooltip-text">Full URL of the hosted image (must start with https://). The image will be displayed as the section background using background-size: cover.</span>
+                </span>
+              </label>
+              <div class="field-control">
+                <input type="text" id="inp-bgimg-src" placeholder="https://cdn.yoursite.com/bg.jpg">
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1460,6 +1514,38 @@
           </label>
         </div>
 
+        <div class="mobile-section-header" style="margin-top:12px;">Mobile</div>
+
+        <div class="field-row">
+          <label class="field-label">
+            Padding
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">Override the button's padding on mobile. Leave blank to keep desktop values.</span>
+            </span>
+          </label>
+          <div class="field-control">
+            <div class="mob-pad-grid">
+              <label class="mob-pad-cell">
+                <span class="mob-pad-key">T</span>
+                <input type="number" id="inp-btn-mob-pad-top"    min="0" data-key="mobilePadTop">
+              </label>
+              <label class="mob-pad-cell">
+                <span class="mob-pad-key">R</span>
+                <input type="number" id="inp-btn-mob-pad-right"  min="0" data-key="mobilePadRight">
+              </label>
+              <label class="mob-pad-cell">
+                <span class="mob-pad-key">B</span>
+                <input type="number" id="inp-btn-mob-pad-bottom" min="0" data-key="mobilePadBottom">
+              </label>
+              <label class="mob-pad-cell">
+                <span class="mob-pad-key">L</span>
+                <input type="number" id="inp-btn-mob-pad-left"   min="0" data-key="mobilePadLeft">
+              </label>
+            </div>
+          </div>
+        </div>
+
       </div><!-- /section-button -->
 
       <!-- ─ Section: Template ─────────────────────────── -->
@@ -1486,6 +1572,36 @@
               <option value="image">Image</option>
               <option value="button">Button</option>
             </select>
+          </div>
+        </div>
+
+        <!-- Background image toggle -->
+        <div class="toggle-row">
+          <div class="toggle-label">
+            <span>Background image</span>
+            <span class="tooltip-wrap">
+              <span class="tooltip-icon">i</span>
+              <span class="tooltip-text">Render an image as the background of the entire email template. Overrides any Figma fill. Requires a hosted image URL.</span>
+            </span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="tog-bg-img-tmpl">
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </label>
+        </div>
+        <div class="sub-fields" id="sub-bgimg-tmpl">
+          <div class="field-row" style="margin-bottom:0;">
+            <label class="field-label" for="inp-bgimg-src-tmpl">
+              Image URL
+              <span class="tooltip-wrap">
+                <span class="tooltip-icon">i</span>
+                <span class="tooltip-text">Full URL of the hosted image (must start with https://). The image will fill the entire email container using background-size: cover.</span>
+              </span>
+            </label>
+            <div class="field-control">
+              <input type="text" id="inp-bgimg-src-tmpl" placeholder="https://cdn.yoursite.com/bg.jpg">
+            </div>
           </div>
         </div>
 
@@ -1544,6 +1660,15 @@
             </div>
           </div>
 
+          <div class="field-row">
+            <label class="field-label">Gap</label>
+            <div class="field-control">
+              <label class="mob-pad-cell">
+                <input type="number" id="inp-mob-gap" placeholder="e.g. 16" min="0" data-key="mobileGap">
+              </label>
+            </div>
+          </div>
+
         </div><!-- /mob-frame-fields -->
 
         <!-- Text mobile settings (text layers only) -->
@@ -1564,6 +1689,18 @@
               <label class="mob-pad-cell">
                 <input type="number" id="inp-mob-line-height" placeholder="e.g. 24px" min="1" data-key="mobileLineHeight">
               </label>
+            </div>
+          </div>
+
+          <div class="field-row">
+            <label class="field-label" for="sel-mob-text-align">Text align</label>
+            <div class="field-control">
+              <select id="sel-mob-text-align" data-key="mobileTextAlign">
+                <option value="">Same as desktop</option>
+                <option value="left">Left</option>
+                <option value="center">Center</option>
+                <option value="right">Right</option>
+              </select>
             </div>
           </div>
 
@@ -1776,10 +1913,14 @@ function showSection(frameType) {
   var isButton   = (frameType === 'button');
   var isTemplate = (frameType === 'template');
   var isImage    = (frameType === 'image');
+  var isDivider  = (frameType === 'divider');
   document.getElementById('section-frame').style.display    = isFrame    ? 'block' : 'none';
   document.getElementById('section-button').style.display   = isButton   ? 'block' : 'none';
   document.getElementById('section-template').style.display = isTemplate ? 'block' : 'none';
   document.getElementById('section-image').style.display    = isImage    ? 'block' : 'none';
+  // BG image block only relevant for proper section frames (not dividers)
+  var bgImgBlock = document.getElementById('sec-bgimg-block');
+  if (bgImgBlock) bgImgBlock.style.display = (isFrame && !isDivider) ? '' : 'none';
   document.getElementById('no-selection').style.display     = 'none';
   // Keep all four dropdowns in sync
   document.getElementById('sel-frame-type').value      = frameType || '';
@@ -1922,6 +2063,9 @@ var customSelects = {
     // Keep the in-memory node config in sync so top bar reflects the new type immediately
     if (_currentNode && _currentNode.cfg) { _currentNode.cfg.frameType = val || null; }
     updatePreviewBtn(val === 'template');
+    // Re-evaluate mobile section: it only shows for Section frames, so
+    // switching frame type may need to show or hide it.
+    updateMobileSection();
   });
 });
 
@@ -1937,6 +2081,9 @@ function updateMobileSection() {
   document.getElementById('section-mobile').style.display    = showSection    ? 'block' : 'none';
   document.getElementById('mob-frame-fields').style.display  = isAutoLayout   ? 'block' : 'none';
   document.getElementById('mob-text-fields').style.display   = isText         ? 'block' : 'none';
+  // HTML tag row: only meaningful for text layers shown in the Section panel
+  var rowHtmlTag = document.getElementById('row-html-tag');
+  if (rowHtmlTag) rowHtmlTag.style.display = (frameVisible && isText) ? '' : 'none';
 }
 
 // Re-evaluate mobile section whenever visibility dropdown changes
@@ -1954,6 +2101,26 @@ document.querySelectorAll('[data-key]').forEach(wireEl);
 // ── Full width on mobile toggle ──────────────────────────────
 document.getElementById('tog-full-width').addEventListener('change', function() {
   parent.postMessage({ pluginMessage: { type: 'update-prop', key: 'fullWidthMobile', value: this.checked } }, '*');
+});
+
+// ── Background image toggle — section panel ──────────────────
+document.getElementById('tog-bg-img').addEventListener('change', function() {
+  var on = this.checked;
+  document.getElementById('sub-bgimg').classList.toggle('expanded', on);
+  parent.postMessage({ pluginMessage: { type: 'update-prop', key: 'bgImgOn', value: on } }, '*');
+});
+document.getElementById('inp-bgimg-src').addEventListener('change', function() {
+  parent.postMessage({ pluginMessage: { type: 'update-prop', key: 'bgImgSrc', value: this.value.trim() } }, '*');
+});
+
+// ── Background image toggle — template panel ─────────────────
+document.getElementById('tog-bg-img-tmpl').addEventListener('change', function() {
+  var on = this.checked;
+  document.getElementById('sub-bgimg-tmpl').classList.toggle('expanded', on);
+  parent.postMessage({ pluginMessage: { type: 'update-prop', key: 'bgImgOn', value: on } }, '*');
+});
+document.getElementById('inp-bgimg-src-tmpl').addEventListener('change', function() {
+  parent.postMessage({ pluginMessage: { type: 'update-prop', key: 'bgImgSrc', value: this.value.trim() } }, '*');
 });
 
 // ── Populate form from cfg ───────────────────────────────────
@@ -1989,6 +2156,22 @@ function populateForm(cfg) {
   var selImgVis = document.getElementById('sel-img-visibility');
   if (selImgVis) selImgVis.value = cfg.visibility || '';
   document.getElementById('tog-full-width').checked = !!(cfg.fullWidthMobile);
+  // Background image — section panel
+  var togBgImg = document.getElementById('tog-bg-img');
+  if (togBgImg) {
+    togBgImg.checked = !!(cfg.bgImgOn);
+    var subBgImg = document.getElementById('sub-bgimg');
+    if (subBgImg) subBgImg.classList.toggle('expanded', !!(cfg.bgImgOn));
+    setInputVal('inp-bgimg-src', cfg.bgImgSrc || '');
+  }
+  // Background image — template panel
+  var togBgImgTmpl = document.getElementById('tog-bg-img-tmpl');
+  if (togBgImgTmpl) {
+    togBgImgTmpl.checked = !!(cfg.bgImgOn);
+    var subBgImgTmpl = document.getElementById('sub-bgimg-tmpl');
+    if (subBgImgTmpl) subBgImgTmpl.classList.toggle('expanded', !!(cfg.bgImgOn));
+    setInputVal('inp-bgimg-src-tmpl', cfg.bgImgSrc || '');
+  }
   // Mobile overrides
   setInputVal('inp-mob-font-size',    cfg.mobileFontSize    || '');
   setInputVal('inp-mob-line-height',  cfg.mobileLineHeight  || '');
@@ -1996,10 +2179,22 @@ function populateForm(cfg) {
   setInputVal('inp-mob-pad-right',    cfg.mobilePadRight    || '');
   setInputVal('inp-mob-pad-bottom',   cfg.mobilePadBottom   || '');
   setInputVal('inp-mob-pad-left',     cfg.mobilePadLeft     || '');
-  var selMobStack = document.getElementById('sel-mob-stack');
-  var selMobAlign = document.getElementById('sel-mob-align');
-  if (selMobStack) selMobStack.value = cfg.mobileStack || '';
-  if (selMobAlign) selMobAlign.value = cfg.mobileAlign || '';
+  setInputVal('inp-mob-gap',          cfg.mobileGap         || '');
+  // Button-panel mobile padding inputs (same plugin data keys, different input IDs)
+  setInputVal('inp-btn-mob-pad-top',    cfg.mobilePadTop    || '');
+  setInputVal('inp-btn-mob-pad-right',  cfg.mobilePadRight  || '');
+  setInputVal('inp-btn-mob-pad-bottom', cfg.mobilePadBottom || '');
+  setInputVal('inp-btn-mob-pad-left',   cfg.mobilePadLeft   || '');
+
+  var selHtmlTag = document.getElementById('sel-html-tag');
+  if (selHtmlTag) selHtmlTag.value = cfg.htmlTag || '';
+
+  var selMobStack     = document.getElementById('sel-mob-stack');
+  var selMobAlign     = document.getElementById('sel-mob-align');
+  var selMobTxtAlign  = document.getElementById('sel-mob-text-align');
+  if (selMobStack)    selMobStack.value    = cfg.mobileStack     || '';
+  if (selMobAlign)    selMobAlign.value    = cfg.mobileAlign     || '';
+  if (selMobTxtAlign) selMobTxtAlign.value = cfg.mobileTextAlign || '';
 }
 
 function setInputVal(id, val) {
@@ -2096,11 +2291,10 @@ window.onmessage = function(event) {
   if (msg.type === 'resp-frame-set') {
     _respFrameId = msg.id;
     renderRespRow(msg.name);
-    // Auto-scan if the Issues tab is open and waiting for a template
-    if (_activeTab === 'issues') {
-      _issuesScanned = false;
-      triggerScan();
-    }
+    // Always scan when a template is set so the Issues badge populates
+    // even before the user visits the Issues tab
+    _issuesScanned = false;
+    triggerScan();
     return;
   }
 
@@ -2170,7 +2364,7 @@ document.getElementById('btn-preview').addEventListener('click', function() {
     parent.postMessage({ pluginMessage: {
       type:        'generate',
       respFrameId: _respFrameId || null,
-      emailTitle:  _currentNode ? _currentNode.name : ''
+      emailTitle:  _currentNode ? _currentNode.name.replace(/#frametype:\w+/gi, '').replace(/\s+/g, ' ').trim() : ''
     }}, '*');
   } else {
     if (!_bpDesktopId) {
@@ -2183,7 +2377,7 @@ document.getElementById('btn-preview').addEventListener('click', function() {
     }
     parent.postMessage({ pluginMessage: {
       type:       'generate-breakpoint',
-      emailTitle: _currentNode ? _currentNode.name : ''
+      emailTitle: _currentNode ? _currentNode.name.replace(/#frametype:\w+/gi, '').replace(/\s+/g, ' ').trim() : ''
     }}, '*');
   }
 });
@@ -2198,11 +2392,32 @@ document.getElementById('btn-preview').addEventListener('click', function() {
 function buildPreviewHtml(mode) {
   var overrideCss;
   if (mode === 'mobile') {
-    overrideCss =
-      '<style id="preview-override">' +
+    // Static rules that mirror the @media block (visibility, container sizing,
+    // fill columns, stacking, desktop-only gap/column hiding).
+    var staticRules =
       '.for-mobile{display:block!important;max-height:none!important;overflow:visible!important;}' +
       '.for-desktop{display:none!important;max-height:0!important;overflow:hidden!important;}' +
-      '</style>';
+      '.email-container{width:100%!important;max-width:100%!important;}' +
+      '.email-container table{max-width:100%!important;table-layout:fixed!important;}' +
+      '.email-container .fill-col{width:auto!important;min-width:0!important;}' +
+      '.stack-column{display:block!important;width:100%!important;max-width:100%!important;}' +
+      '.gap-dt{height:0!important;max-height:0!important;width:0!important;max-width:0!important;overflow:hidden!important;padding:0!important;font-size:0!important;line-height:0!important;}' +
+      '.col-dt-hide{width:0!important;max-width:0!important;overflow:hidden!important;padding:0!important;font-size:0!important;line-height:0!important;}';
+
+    // Dynamic per-node rules (padding, gap, alignment, font-size overrides) are
+    // injected into the generated HTML as a separate <style> block inside an
+    // @media wrapper.  Since @media doesn't fire reliably in Figma's srcdoc
+    // iframe, we extract those rules and re-inject them without the wrapper.
+    // The custom block always starts immediately after the opening <style> tag
+    // with "@media" (the main CSS block starts with "  *" instead), so this
+    // pattern uniquely identifies it.
+    var dynRules = '';
+    var dynMatch = _generatedHtml.match(/<style type="text\/css">\n@media only screen[^{]*\{([\s\S]*?)\n\}\n<\/style>/);
+    if (dynMatch && dynMatch[1]) {
+      dynRules = dynMatch[1];
+    }
+
+    overrideCss = '<style id="preview-override">' + staticRules + dynRules + '</style>';
   } else {
     // web / desktop view
     overrideCss =
@@ -2242,7 +2457,7 @@ function openPreview() {
   document.getElementById('preview-panel').classList.add('active');
   // Auto-fill title
   if (_currentNode) {
-    document.getElementById('inp-email-title').value = _currentNode.name || '';
+    document.getElementById('inp-email-title').value = (_currentNode.name || '').replace(/#frametype:\w+/gi, '').replace(/\s+/g, ' ').trim();
   }
   // _emailWidth is set by the html-result handler from the actual generated email width
   // Compute and display the minified output size (what the user will actually copy/export).
